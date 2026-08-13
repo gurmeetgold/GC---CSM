@@ -1,77 +1,56 @@
-# Phase 2 — what the real unified-API integration touches (and what it doesn't)
+# NEXT — where things stand and what's left
 
-The whole point of the Phase 1 seams is that Phase 2 is additive. This is the
-checklist to confirm the seams held.
+## Phase 2 status: live path built, behind the switches
 
-## What Phase 2 ADDS (new files, beside the existing ones)
+The seams from Phase 1 held. Phase 2 added the live implementations **beside** the
+mock, without touching the signal engine or breaking the mock path.
 
-### 1. `src/data/live/UnifiedApiDataSource.ts` — a new `DataSource`
-Implements the exact same interface `MockDataSource` already implements:
+### Shipped this phase
+- `UnifiedApiDataSource` (Salesforce via Merge + Gong) implementing the same
+  `DataSource` interface, with a full vendor→domain adapter, per-source graceful
+  degradation, and pagination/rate-limit handling.
+- `ClaudeAnswerEngine` for ask-anything, plus a soft-signal extractor and a
+  reasoning writer — all behind injected `ClaudeClient`.
+- Soft signals fold into risk through the engine's own frozen `rollUp`
+  (`src/health/combine.ts`); the end-to-end pipeline lives in `src/health/pipeline.ts`.
+- OAuth connect flow (Merge Link), encrypted token store (AES-256-GCM), independent
+  `DATA_SOURCE` / `ANSWER_ENGINE` switches, server-side config + factory.
+- Docs: `DATA_HANDLING.md`, `PHASE2_SIGNAL_PROPOSALS.md`; `DECISIONS.md` updated.
 
-```ts
-class UnifiedApiDataSource implements DataSource {
-  readonly name = 'unified-api';
-  now(): Date { return new Date(); }          // real clock
-  async listAccounts(): Promise<Account[]> { … }
-  async getAccount(id: string): Promise<Account | null> { … }
-}
-```
+### Proven without live credentials
+Everything is covered by fixture/stub tests (177 total, all green): the anti-drift
+contract test, adapter tests over messy vendor payloads, graceful-degradation tests,
+HTTP resilience (429/401/5xx/pagination), soft-signal validation + clamping,
+reasoning faithfulness, and the encrypted token store. The Phase 1 signal-engine
+tests pass unchanged.
 
-Its entire job is **normalization**: call the unified Salesforce/Gong API and map
-vendor records into the domain `Account`/`Contact`/`Interaction`/`UsageSnapshot`
-shape. Everything vendor-specific (field names like `AccountId__c`, Gong call IDs,
-auth, pagination, retries) is quarantined in this file and its helpers. Because it
-emits the identical normalized shape, the engine, the UI, and every test work
-against it unchanged.
+## What remains to run the live path for real (deployment, not code)
 
-Wire it in one place:
-```ts
-// src/data/index.ts — the ONLY edit to existing data code
-case 'live':
-  return new UnifiedApiDataSource(config);
-```
-Set `VITE_DATA_SOURCE=live` and the whole app runs on real data. The mock stays as
-the credential-free demo path and the integration-test harness.
+1. **A thin backend host.** The live source and Claude client are server-side (they
+   carry secrets). Today the SPA runs mock in-browser. To serve live data to the
+   browser, stand up a small API (Express/Fastify/Next route) that:
+   - calls `buildDataSource(cfg)` / `buildAnswerEngine(cfg)` from
+     `src/server/factory.ts`,
+   - exposes `GET /accounts` (evaluated book) and `POST /ask`,
+   - and add a browser `HttpDataSource`/`HttpAnswerEngine` (implementing the existing
+     interfaces) that calls those endpoints. The switch already governs both sides.
+2. **Secrets provisioning.** Set the env vars in `DATA_HANDLING.md` (Merge, Gong,
+   Anthropic, `TOKEN_ENCRYPTION_KEY`) in the deploy environment.
+3. **Merge + Gong connection.** Run the Merge Link flow (`MergeLinkService`) to
+   connect a real Salesforce + Gong and store the account tokens encrypted.
+4. **A recorded-payload capture step (optional but recommended).** Snapshot real
+   (anonymized) Merge/Gong responses into fixtures to widen the adapter tests against
+   the specific customer's Salesforce config.
 
-**Contract test to add:** run `UnifiedApiDataSource` against a recorded API fixture
-and assert every returned object satisfies the `Account` shape — the same assertion
-`mockAccounts.test.ts` already makes structurally. This is what stops the mock and
-live sources from drifting apart.
+## What is still explicitly out (future phases)
+- Persistence of computed signals (a cache) — still in-memory; a Postgres `TokenStore`
+  and signal cache drop in behind existing interfaces.
+- The admin panel for per-customer / per-segment thresholds (`resolveThresholds`
+  already supports overrides; see PHASE2_SIGNAL_PROPOSALS.md #3/#4).
+- Any signal-logic changes real data suggests — collected in
+  `PHASE2_SIGNAL_PROPOSALS.md`, proposed not applied.
 
-### 2. `src/answer/ClaudeAnswerEngine.ts` — a new `AnswerEngine`
-Implements `AnswerEngine.ask(question, context)`, calls the Claude API with the
-evaluated book as context, and returns the same `AnswerResult` shape. Inject it in
-place of `MockAnswerEngine` at the one composition point in `AskAnything`
-(`engine` prop) — no UI change.
-
-### 3. Soft signals (Claude reads transcripts)
-`Interaction.summary` already carries call/email text. A new soft-signal pass can
-enrich an account with Claude-derived signals. Cleanest fit: a post-evaluation
-enrichment step that appends `Signal`s of a new `polarity`/type — the `Signal`
-type and roll-up already accommodate additional entries.
-
-### 4. Admin panel for thresholds
-`resolveThresholds(override)` already exists. Phase 2 adds the UI + persistence
-that produces the `ThresholdOverride` object per customer and passes it into
-`evaluate()`. **No engine change** — the override path is already there and tested.
-
-### 5. Persistence
-Swap in-memory for Postgres by writing a store *behind the same `DataSource`
-interface* (or a repository the live source uses). The domain model is already
-serializable (ISO date strings, no class instances), so it maps to rows directly.
-
-## What Phase 2 does NOT touch (proof the seams held)
-
-- **`src/domain/**`** — the normalized model. Vendor fields never reach it.
-- **`src/engine/**`** — the crown jewel. Signals, thresholds semantics, roll-up,
-  and all engine tests are source-agnostic and stay byte-for-byte identical.
-- **`src/app/**`** — the three screens. They consume `EvaluatedAccount[]` and the
-  two interfaces; they already can't tell mock from live (verified by the seam
-  grep in the README). The only conceivable change is net-new screens (e.g. the
-  admin panel), never edits to the existing three.
-- **The `DataSource` / `AnswerEngine` interfaces themselves** — Phase 2 implements
-  them, it doesn't reshape them.
-
-## The one-line litmus test
-If adding real data forces an edit inside `engine/`, `domain/`, or the existing
-screens, a seam leaked and we fix the seam — not the engine.
+## The litmus test still holds
+Nothing in `engine/` or `domain/` (beyond additive soft-signal types) changed, and
+the mock path runs exactly as in Phase 1. If a future phase forces an engine edit to
+onboard data, that's a seam leak to fix in the adapter — not the engine.

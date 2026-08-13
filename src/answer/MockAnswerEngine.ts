@@ -213,6 +213,10 @@ function humanSignal(type: SignalType): string {
     renewal_risk: 'renewal risk',
     support_strain: 'support strain',
     growth_opportunity: 'a growth opportunity',
+    sentiment_decline: 'a sentiment decline',
+    champion_disengaging: 'a disengaging champion',
+    competitor_mention: 'a competitor mention',
+    buying_signal: 'a buying signal',
   };
   return map[type];
 }

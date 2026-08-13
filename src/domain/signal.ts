@@ -7,7 +7,11 @@
 
 export type RiskLevel = 'green' | 'yellow' | 'red';
 
-export type SignalType =
+/**
+ * Hard signals — computed deterministically by the pure engine from account data.
+ * These are the crown jewel and are frozen this phase.
+ */
+export type HardSignalType =
   | 'usage_decline'
   | 'adoption_gap'
   | 'champion_silence'
@@ -15,7 +19,24 @@ export type SignalType =
   | 'support_strain'
   | 'growth_opportunity'; // positive / expansion signal
 
+/**
+ * Soft signals — extracted by Claude from call/email text (Phase 2). They are the
+ * SAME `Signal` shape as hard signals and flow through the SAME roll-up, so the
+ * risk view treats them uniformly. They are the ONLY way LLM output can influence
+ * RiskLevel; Claude free-text never sets risk directly.
+ */
+export type SoftSignalType =
+  | 'sentiment_decline'
+  | 'champion_disengaging'
+  | 'competitor_mention'
+  | 'buying_signal'; // positive / expansion soft signal
+
+export type SignalType = HardSignalType | SoftSignalType;
+
 export type SignalPolarity = 'risk' | 'opportunity';
+
+/** Where a signal came from. Defaults to hard for every Phase 1 signal. */
+export type SignalSource = 'hard' | 'soft';
 
 /**
  * Severity drives the roll-up to RiskLevel:
@@ -39,4 +60,10 @@ export interface Signal {
   detail: string;
   /** The concrete values that tripped the threshold — the evidence trail. */
   evidence: Record<string, number | string>;
+  /**
+   * Provenance. Optional and absent on the frozen hard signals (treated as
+   * 'hard'); the soft-signal extractor stamps 'soft'. Lets the UI label
+   * LLM-derived signals without changing how the roll-up treats them.
+   */
+  source?: SignalSource;
 }

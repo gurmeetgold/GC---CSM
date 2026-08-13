@@ -130,3 +130,80 @@ interface, so a Postgres-backed store drops in as another implementation.
 - **`'count'` is a substring of `'accounts'`**, so the answer engine mis-routed
   "which accounts are at risk?" to the counting intent. Fixed with word-boundary
   matching.
+
+---
+
+# Phase 2 Decisions — live integration (Salesforce + Gong + Claude)
+
+Prime directive this phase: **the mock never breaks and the two paths never
+diverge.** Everything below ships behind the existing `DATA_SOURCE` and
+`ANSWER_ENGINE` switches, and the frozen signal engine is untouched.
+
+## 11. Unified API: Merge.dev
+
+Salesforce comes through Merge's unified CRM (accounts, contacts, opportunities) and
+Ticketing categories; Gong through a conversation client. Merge's Link flow also
+owns the raw OAuth to Salesforce/Gong, so we never hold vendor client secrets or run
+refresh loops. Vendor field names are quarantined to `src/data/live/` (isolation
+grep proves it).
+
+## 12. Every external dependency is an injected interface
+
+`MergeClient`, `GongClient`, and `ClaudeClient` are interfaces. The data source and
+answer engine depend only on them, so **CI runs entirely on fixtures with zero
+credentials** — no test hits a live API. The real HTTP implementations
+(`httpClients.ts`, `claudeClient.ts`) carry secrets and are server-side only; the
+browser build excludes them (verified by the bundle).
+
+## 13. The clock/`now` seam extended to the live source
+
+`UnifiedApiDataSource.now()` returns the real clock; the mock returns its fixed
+reference date. The UI still can't tell them apart — same seam as Phase 1.
+
+## 14. Soft signals reach risk ONLY through the engine's own roll-up
+
+Claude soft signals are the SAME `Signal` type (with `source: 'soft'`). They are
+combined with hard signals in `src/health/combine.ts`, which calls the engine's
+**exported, frozen `rollUp`** — it does not reimplement risk logic. So soft signals
+are treated by exactly the same rules as hard ones, and the crown jewel is untouched.
+`SignalType` gained four soft literals and `Signal` an optional `source` field; both
+are additive and change no threshold or logic.
+
+## 15. Two Claude jobs, kept strictly separate
+
+- **Soft-signal extractor** — strict JSON out, validated against a fixed enum,
+  temperature 0. Risk-polarity soft signals are **severity-clamped to `warning`** so
+  an LLM signal can never solo-red an account (it can only stack). See
+  PHASE2_SIGNAL_PROPOSALS.md #2 for revisiting this ceiling.
+- **Reasoning writer** — given ONLY the fired signals, narrates the "why". A
+  `validateReasoning` guard scans the output for language describing risks that did
+  NOT fire; if it finds any (a hallucination), the model output is **rejected** and a
+  deterministic, trivially-faithful summary composed from the fired signals is used
+  instead. Faithfulness is enforced by construction, not hoped for.
+
+## 16. Independent switches
+
+`DATA_SOURCE=mock|live` and `ANSWER_ENGINE=mock|claude` are resolved separately, so
+live data + mock answers (or vice versa) is a valid debugging combination.
+
+## 17. Ask-anything: Claude picks IDs, our data supplies the truth
+
+`ClaudeAnswerEngine` lets Claude phrase the answer and choose relevant account IDs,
+but risk levels and reasons in the result are read from OUR evaluated data — the
+model can't misreport an account's health, and invented IDs are dropped.
+
+## 18. Graceful degradation is per-source
+
+The CRM account list is the only fatal dependency; every other fetch (contacts,
+opportunities, tickets, Gong calls) degrades to empty independently on failure. An
+`assembleAccount` failure emits a shape-complete minimal record rather than sinking
+the book. HTTP clients retry 429/5xx with backoff (honoring `Retry-After`) and map
+401/403 to a typed `SourceUnavailableError`.
+
+## Phase 2 bug caught by the tests (kept honest)
+
+- A `combine` test fixture set `activeUsers: 40` on an account whose usage history
+  still described 75 users, so it unintentionally tripped `usage_decline` (critical)
+  and read red instead of the intended single-warning yellow. The test fixture was
+  wrong, not the engine — fixed the fixture's usage history to match. Good reminder
+  that the frozen engine does exactly what it says.

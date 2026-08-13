@@ -13,13 +13,23 @@ npm test           # 106 tests — engine covered exhaustively
 npm run build      # typecheck + production build
 ```
 
-The app runs on the **mock data source** by default (no credentials needed). The
-data source is selected by a single env flag:
+The app runs on the **mock data source** by default (no credentials needed). Two
+independent switches select the data source and the answer engine:
 
 ```bash
-VITE_DATA_SOURCE=mock   # default — the permanent demo + test path
-VITE_DATA_SOURCE=live   # Phase 2 — UnifiedApiDataSource (not implemented yet)
+# Data source
+DATA_SOURCE=mock    # default — the permanent demo + test path
+DATA_SOURCE=live    # UnifiedApiDataSource (Salesforce via Merge + Gong), server-side
+
+# Answer engine (independent of the data source)
+ANSWER_ENGINE=mock    # default — deterministic responder
+ANSWER_ENGINE=claude  # ClaudeAnswerEngine + soft-signal reasoning, server-side
 ```
+
+The `live` / `claude` implementations are real (Phase 2) but server-side: they carry
+secrets and are excluded from the browser bundle. See `DATA_HANDLING.md` for the env
+vars and `NEXT.md` for the thin backend needed to serve live data to the browser. CI
+and the in-browser demo run entirely on mock with **zero credentials**.
 
 ## The three screens
 
