@@ -4,14 +4,38 @@ A single view of a CSM's book of business: which accounts are at risk, why, and
 what changed. This phase ships the app skeleton, a realistic mock-data layer, the
 pure risk-signal engine, and three screens. No external network calls.
 
-## Quick start
+## Quick start (in-browser mock demo — zero credentials)
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173  (runs on the mock data source)
-npm test           # 106 tests — engine covered exhaustively
+npm run dev        # http://localhost:5173  (mock data + engine, all in the browser)
+npm test           # full suite, all green
 npm run build      # typecheck + production build
 ```
+
+No backend, no keys. This is the instant demo path.
+
+## Running with a backend (required for live data / real Claude)
+
+The live data source and Claude engine are **server-side** (they hold secrets). A thin
+Express host serves the evaluated book to the browser.
+
+```bash
+# 1. Start the backend (mock mode works with no credentials):
+npm run server                       # http://localhost:8787  (DATA_SOURCE/ANSWER_ENGINE from env)
+
+# 2a. Dev: point the SPA at it and run Vite
+VITE_BACKEND_URL=http://localhost:8787 npm run dev
+
+# 2b. Or serve everything from one origin:
+VITE_BACKEND_URL=http://localhost:8787 npm run build
+npm start                            # backend serves the built SPA + API on :8787
+```
+
+To go live, set the env vars in `.env.example` (`DATA_SOURCE=live`, `ANSWER_ENGINE=claude`,
+Merge/Gong/Anthropic keys, `TOKEN_ENCRYPTION_KEY`) before `npm run server`. The browser
+never sees them. If `VITE_BACKEND_URL` is unset, the SPA falls back to the in-browser
+mock — so the demo path always works.
 
 The app runs on the **mock data source** by default (no credentials needed). Two
 independent switches select the data source and the answer engine:

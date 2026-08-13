@@ -19,7 +19,7 @@ function SignalRow({ signal }: { signal: Signal }) {
   );
 }
 
-function AccountCard({ e, highlight }: { e: EvaluatedAccount; highlight: boolean }) {
+function AccountCard({ e, highlight, narrative }: { e: EvaluatedAccount; highlight: boolean; narrative?: string }) {
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     if (highlight && ref.current) {
@@ -64,6 +64,13 @@ function AccountCard({ e, highlight }: { e: EvaluatedAccount; highlight: boolean
         </div>
       </header>
 
+      {narrative && (
+        <div className="mb-4 rounded-lg bg-surface-sunken px-4 py-3">
+          <p className="text-sm leading-relaxed text-ink">{narrative}</p>
+          <p className="mt-1 text-[11px] uppercase tracking-wide text-ink-faint">Summary</p>
+        </div>
+      )}
+
       <div>
         <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">
           Why this account is at risk
@@ -94,9 +101,12 @@ function AccountCard({ e, highlight }: { e: EvaluatedAccount; highlight: boolean
 export function RedAccounts({
   book,
   focusId,
+  reasoning = {},
 }: {
   book: EvaluatedAccount[];
   focusId: string | null;
+  /** accountId → narrative reasoning (present in live/backend mode). */
+  reasoning?: Record<string, string>;
 }) {
   const reds = book
     .filter((e) => e.evaluation.riskLevel === 'red')
@@ -137,7 +147,12 @@ export function RedAccounts({
       </div>
       <div className="grid gap-4">
         {reds.map((e) => (
-          <AccountCard key={e.account.id} e={e} highlight={focusId === e.account.id} />
+          <AccountCard
+            key={e.account.id}
+            e={e}
+            highlight={focusId === e.account.id}
+            narrative={reasoning[e.account.id]}
+          />
         ))}
       </div>
     </section>

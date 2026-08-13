@@ -24,21 +24,31 @@ HTTP resilience (429/401/5xx/pagination), soft-signal validation + clamping,
 reasoning faithfulness, and the encrypted token store. The Phase 1 signal-engine
 tests pass unchanged.
 
-## What remains to run the live path for real (deployment, not code)
+## The backend host is now built ✅
 
-1. **A thin backend host.** The live source and Claude client are server-side (they
-   carry secrets). Today the SPA runs mock in-browser. To serve live data to the
-   browser, stand up a small API (Express/Fastify/Next route) that:
-   - calls `buildDataSource(cfg)` / `buildAnswerEngine(cfg)` from
-     `src/server/factory.ts`,
-   - exposes `GET /accounts` (evaluated book) and `POST /ask`,
-   - and add a browser `HttpDataSource`/`HttpAnswerEngine` (implementing the existing
-     interfaces) that calls those endpoints. The switch already governs both sides.
-2. **Secrets provisioning.** Set the env vars in `DATA_HANDLING.md` (Merge, Gong,
-   Anthropic, `TOKEN_ENCRYPTION_KEY`) in the deploy environment.
-3. **Merge + Gong connection.** Run the Merge Link flow (`MergeLinkService`) to
-   connect a real Salesforce + Gong and store the account tokens encrypted.
-4. **A recorded-payload capture step (optional but recommended).** Snapshot real
+The thin backend that serves live data to the browser is implemented and tested:
+
+- `src/server/http.ts` — Express app: `GET /api/health`, `GET /api/accounts`
+  (evaluated book + red-account reasoning), `POST /api/ask`. Runs
+  `buildDataSource`/`buildAnswerEngine`/`buildSoftSignalEnrichment` from the factory.
+- `src/server/service.ts` — `BookService`: assembles the implementations from config,
+  caches the evaluated book (60s TTL), answers questions.
+- `src/server/main.ts` — entry point (`npm run server` / `npm start`).
+- Browser side: `HttpBookProvider` + `HttpAnswerEngine` implement the existing seams;
+  `resolveBookProvider()` picks HTTP vs in-browser-mock by `VITE_BACKEND_URL`. The UI
+  is unchanged and can't tell which is behind it.
+- Verified end-to-end in mock mode (server integration test + a live browser fetch);
+  the live pipeline itself is proven against fixtures in `src/health/pipeline.test.ts`.
+
+### What remains to point it at real accounts (deployment, not code)
+
+1. **Secrets provisioning.** Set the env vars in `.env.example` / `DATA_HANDLING.md`
+   (Merge, Gong, Anthropic, `TOKEN_ENCRYPTION_KEY`) in the deploy environment, then
+   `DATA_SOURCE=live ANSWER_ENGINE=claude npm run server`.
+2. **Merge + Gong connection.** Run the Merge Link flow (`MergeLinkService`) to connect
+   a real Salesforce + Gong and store the account tokens encrypted. (A tiny
+   `/api/connect` route to drive this from the UI is the only remaining server surface.)
+3. **A recorded-payload capture step (optional but recommended).** Snapshot real
    (anonymized) Merge/Gong responses into fixtures to widen the adapter tests against
    the specific customer's Salesforce config.
 

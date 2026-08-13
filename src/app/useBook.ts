@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
-import { createDataSource, resolveDataSourceKind, type DataSource } from '../data';
-import { evaluate } from '../engine';
-import { DEFAULT_THRESHOLDS } from '../domain';
 import type { EvaluatedAccount } from '../answer';
+import { resolveBookProvider } from './bookProvider';
 
 interface BookState {
   loading: boolean;
@@ -11,12 +9,14 @@ interface BookState {
   sourceName: string;
   /** The clock the active source's data was evaluated against. */
   now: Date;
+  /** accountId → narrative reasoning (populated by the backend in live mode). */
+  reasoning: Record<string, string>;
 }
 
 /**
- * Loads the book of business from the configured DataSource and runs every
- * account through the signal engine. The UI consumes only the resulting
- * EvaluatedAccount[] — it never knows or cares which data source produced it.
+ * Loads the evaluated book through the configured BookProvider — the local mock+engine
+ * in the browser, or the backend host in live mode. The UI consumes only the resulting
+ * EvaluatedAccount[]; it never knows which provider produced it.
  */
 export function useBook(): BookState {
   const [state, setState] = useState<BookState>({
@@ -25,6 +25,7 @@ export function useBook(): BookState {
     book: [],
     sourceName: '',
     now: new Date(),
+    reasoning: {},
   });
 
   useEffect(() => {
@@ -32,16 +33,10 @@ export function useBook(): BookState {
 
     async function load() {
       try {
-        const kind = resolveDataSourceKind(import.meta.env.VITE_DATA_SOURCE as string | undefined);
-        const source: DataSource = createDataSource(kind);
-        const now = source.now();
-        const accounts = await source.listAccounts();
-        const book: EvaluatedAccount[] = accounts.map((account) => ({
-          account,
-          evaluation: evaluate(account, DEFAULT_THRESHOLDS, now),
-        }));
+        const provider = resolveBookProvider();
+        const { book, now, sourceName, reasoning } = await provider.loadBook();
         if (!cancelled) {
-          setState({ loading: false, error: null, book, sourceName: source.name, now });
+          setState({ loading: false, error: null, book, sourceName, now, reasoning });
         }
       } catch (err) {
         if (!cancelled) {
@@ -51,6 +46,7 @@ export function useBook(): BookState {
             book: [],
             sourceName: '',
             now: new Date(),
+            reasoning: {},
           });
         }
       }

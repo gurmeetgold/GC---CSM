@@ -4,6 +4,8 @@ import { HealthOverview } from './screens/HealthOverview';
 import { RedAccounts } from './screens/RedAccounts';
 import { AskAnything } from './screens/AskAnything';
 import { createAnswerEngine } from '../answer';
+import { HttpAnswerEngine } from '../answer/http/HttpAnswerEngine';
+import { backendUrl } from './bookProvider';
 
 type Tab = 'overview' | 'red' | 'ask';
 
@@ -14,10 +16,14 @@ const TABS: { key: Tab; label: string }[] = [
 ];
 
 export default function App() {
-  const { loading, error, book, now } = useBook();
+  const { loading, error, book, now, reasoning } = useBook();
   const [tab, setTab] = useState<Tab>('overview');
   const [focusId, setFocusId] = useState<string | null>(null);
-  const answerEngine = useMemo(() => createAnswerEngine('mock'), []);
+  // Backend present → route answers through it (real Claude); otherwise the mock.
+  const answerEngine = useMemo(() => {
+    const url = backendUrl();
+    return url ? new HttpAnswerEngine(url) : createAnswerEngine('mock');
+  }, []);
 
   // Navigating to an account jumps to the reasoning screen and highlights it.
   function selectAccount(id: string) {
@@ -83,7 +89,7 @@ export default function App() {
         {!loading && !error && (
           <>
             {tab === 'overview' && <HealthOverview book={book} now={now} onSelect={selectAccount} />}
-            {tab === 'red' && <RedAccounts book={book} focusId={focusId} />}
+            {tab === 'red' && <RedAccounts book={book} focusId={focusId} reasoning={reasoning} />}
             {tab === 'ask' && <AskAnything book={book} onSelect={selectAccount} engine={answerEngine} />}
           </>
         )}
