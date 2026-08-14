@@ -278,3 +278,58 @@ once in `tailwind.config.js` and applied consistently. Health state is triple-en
 by running the dataviz validator, not by eye. Money numbers use a hero type scale
 with tabular figures. Charts follow the dataviz method (honest marks, 2px gaps,
 labels/legends, no chartjunk).
+
+---
+
+# Phase 4 Decisions — SignalOS visual language + honest MVP scoping
+
+Prime directive: match the SignalOS vision screens' look and feel, but **only
+populate fields we can truthfully derive from the MVP integrations** (CRM, Gong,
+email/calendar, help desk, Slack). Beauty yes; fake data no.
+
+## 26. What we CUT (needs eng/incident/observability tooling we don't connect)
+The entire TAM *engineering* dashboard: engineering P1/P2 incident counts, the
+"Integration Health Score", eng technical escalations, TAM capacity/workload
+planning, "Where to Deploy TAMs", "Top Recurring Engineering Issues" (connector/
+webhook/API telemetry), and the eng "Technical Risk Score" bubble. These require
+PagerDuty / observability / eng-Jira, which are explicitly out of the MVP. A clean
+architectural spot is left for a future **premium technical tier**; nothing is built.
+
+## 27. What we SOFTENED (needs the product-usage warehouse we don't have)
+- **Expansion → "Expansion Signals," not a valued pipeline.** No stage funnel, no
+  weighted forecast, no 0–100 expansion score, no "multi-product fit," no
+  "usage 2.4× above average / unused seats %". We show the honest signals we can see
+  (champion strength from Gong, buying language, open CRM opps, new stakeholders) and
+  a dollar amount **only** when a real CRM opportunity exists (`CrmOpportunity`).
+- **Deep-usage widgets downgraded.** No WAU charts, no "Product Adoption /100", no
+  login-stickiness/feature-depth hero charts on the surface. On the account detail the
+  vision's "Product Adoption" and "Technical Stability" tiles are replaced by
+  **Engagement** (Gong/email) and **Support Health** (help desk) — both honestly
+  sourceable — and metric tiles are **qualitative** (Critical/At Risk/Healthy,
+  Low/Medium/High), never a fabricated warehouse-grade number.
+- **Support & Technical Attention kept, but LIGHT** — help desk + Slack only: tickets
+  needing attention, SLA breach/aging, and the honest **ticket → account-risk** link
+  (an account surfaces here only when a `support_strain`/`support_sentiment` signal
+  actually fired). Footer states plainly that deep eng incident data is a future tier.
+
+## 28. Trends & sparklines — the honesty rule for a fresh MVP
+A newly-onboarded customer has point-in-time integration data, not month-over-month
+history, so period-over-period deltas would be fabricated on day one. Decision
+(owner-approved): **thin-data / cold-start accounts render NO sparkline**; the demo
+seeds a **modeled** short `trendSeries` so localhost shows the full sparkline look,
+and it is documented here + in `DESIGN.md` as modeled-for-demo. `trendSeries` is empty
+for cold-start accounts (they show a "—"), and it is never presented as a
+warehouse-grade usage figure. In production the series accrues as SignalOS runs.
+
+## 29. New fields stay honestly sourceable and shape-identical
+`SupportTicket[]` (help desk), `CrmOpportunity[]` (CRM), `Contact.engagement`
+(Gong/email), and `trendSeries` (modeled) are all additive and emitted by BOTH the
+mock and the live adapter, so the anti-drift contract test still holds. The signal
+engine's inputs are unchanged (ticket **counts** still drive `support_strain`); the
+new ticket **objects** are UI/support-module detail only — the crown jewel is untouched.
+
+## 30. Navigation reproduces the SignalOS shell; unbuilt items are disabled
+The left nav shows the full SignalOS item set. The six screens we build are clickable
+(Home, Accounts, Renewals, Opportunities, Technical Health, Executive View); Playbooks,
+Alerts, and Settings are shown but **non-clickable (disabled)** so the shell matches the
+vision without pretending features exist. "Ask" is wired to the top-bar search.

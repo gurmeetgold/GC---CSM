@@ -98,3 +98,35 @@ including all eight Phase 3 fields. If a future change drifts one side, it fails
 Leadership needs no new data source — every metric is derived from the normalized
 model + fired signals. `ownerCsm`/`priorArr`/`lifecycleState` are the only new inputs
 it relies on, all listed above.
+
+---
+
+# Phase 4 — where the premium tier and deep-usage integrations plug in
+
+Everything Phase 4 ships renders from mock and is honestly sourceable from the MVP
+integrations (CRM, Gong, email/calendar, help desk, Slack). Two clean extension
+points are left for later, with nothing faked now:
+
+## Premium **technical tier** (engineering / incident data)
+The CUT TAM engineering dashboard becomes a paid add-on when we connect PagerDuty,
+observability, and engineering Jira. It would light up: real eng P1/P2 incidents, an
+integration-health score, eng escalations, TAM capacity planning, and a technical-risk
+model. Plug-in point: a new `TechnicalDataSource` beside the existing sources feeding
+a new `technical/` module and a `Technical Health` screen upgrade — the nav item and
+architectural slot already exist (currently the LIGHT help-desk view).
+
+## Deep **product-usage** integrations (Segment / Amplitude / Snowflake)
+When a product-analytics/warehouse source connects, three things upgrade automatically:
+- `email_responsiveness`, `feature_depth`, and `stickiness_decline` signals stop
+  abstaining and start firing on real data (they already exist and are tested).
+- The account-detail metric tiles can move from qualitative (High/Medium/Low) to real
+  scored values; the Expansion screen can add usage-based readiness.
+- `trendSeries` is replaced by a genuine accrued time-series (the modeled demo series
+  retires).
+
+Plug-in point: fill the `responsiveness` / `featureUsage` / `UsageSnapshot.logins`
+fields in the live adapter (they are already in the normalized shape and empty-safe
+today), and relax the "qualitative only" rule on the detail tiles.
+
+**Parity still holds:** the contract test asserts mock and live emit identical shapes
+including all Phase 4 fields (`tickets`, `opportunities`, `trendSeries`).

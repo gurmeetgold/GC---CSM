@@ -105,3 +105,51 @@ top-accent so a buyer's eye lands there first.
    elevation/radius system, a hero type scale with tabular figures, and honest
    dataviz — so moving between the CSM and leadership screens feels like one
    premium product a well-funded team shipped.
+
+---
+
+# Phase 4 — the SignalOS visual language
+
+Phase 4 re-skins the product to the SignalOS vision screens. The Phase 1–3 identity
+(triple-encoded health, hero money numbers, honest dataviz) is preserved; the shell,
+accent, and layout system are updated to match.
+
+## Shell
+- **Left-nav app shell** (56-unit rail): brand mark + wordmark, icon nav with a
+  brand-soft active pill, and the **Portfolio Snapshot** card pinned to the bottom.
+  The full SignalOS nav is reproduced; unbuilt items (Playbooks, Alerts, Settings)
+  are shown but disabled.
+- **Sticky top bar:** ⌘K search that doubles as **Ask** (Enter submits a question),
+  a date-range chip, a notification bell, and the user identity.
+- **Page pattern:** big bold title + subtitle + right-aligned actions → the signature
+  **KPI-tile row** (soft-tinted icon chip · label · hero value · sub · sparkline) →
+  a responsive white-card grid (2-col main + 1-col rail on wide screens).
+
+## Accent & tints
+- **Brand = SignalOS blue `#2563eb`** (nav active, primary buttons, links, focus).
+- Soft pastel **tints** (blue/purple/amber/teal/pink/green/red) for the KPI icon chips
+  and avatars, matched to the screenshots.
+- Health palette unchanged (validated red/amber/green), triple-encoded as before.
+
+## Components (in `src/app/ui/`)
+`AppShell`, `PageHeader` + `PrimaryButton`/`GhostButton`, `KpiTile`, `Card` +
+`LinkAction`, `TrendSpark`/`Delta`/`ScoreRing` (charts), `AccountAvatar`,
+`EngagementChip`/`SlaChip`/`SeverityChip`, and an inline stroke-icon set — so every
+screen is built from one kit and feels like one product.
+
+## Sparklines & honesty
+`TrendSpark` renders nothing (a "—") when the series has <2 points, so cold-start /
+thin-data accounts show no line. The demo's `trendSeries` is **modeled** and labeled
+as such (see DECISIONS §28); it is never a warehouse-grade usage number.
+
+## Before / after — the three highest-impact changes
+1. **A top-tab app became a product.** The four-tab layout is now a full left-nav SaaS
+   shell with a KPI-tile row, an accounts table with avatars/trends/tickets, an AI
+   action center, and a revenue-at-risk rail — the SignalOS "command center" feel.
+2. **Account detail went from nonexistent to the hero of the demo.** A Vanta-style
+   page: header with ARR/renewal countdown, five honest metric tiles, the numbered
+   "why this turned red" with evidence quotes, a 90-day timeline, open tickets, and
+   stakeholders with engagement — the screen that sells the "reasoning" story.
+3. **Honesty made visible.** Expansion shows signals (not a fabricated funnel/score),
+   Support states its help-desk-only sourcing in the footer, and thin-data accounts
+   drop their sparklines — the restraint is itself part of the credibility.
