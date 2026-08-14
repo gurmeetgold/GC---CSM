@@ -17,12 +17,23 @@ export default {
         },
         line: '#e5eaf1',
         lineSoft: '#eef2f7',
-        // Brand accent — a confident indigo for nav, primary actions, focus, links.
+        // Brand accent — the SignalOS blue for nav, primary actions, focus, links.
         brand: {
-          DEFAULT: '#3f4fbf',
-          hover: '#354399',
-          soft: '#eef0fc',
-          ring: '#c3caf3',
+          DEFAULT: '#2563eb',
+          hover: '#1d4ed8',
+          soft: '#eaf1ff',
+          softer: '#f3f7ff',
+          ring: '#bfd4fb',
+        },
+        // Soft pastel tints for KPI-tile icon chips (matched to the screenshots).
+        tint: {
+          blue: '#eaf1ff',
+          purple: '#f0ecfe',
+          amber: '#fdf1e0',
+          teal: '#e5f5f2',
+          pink: '#fdecf1',
+          green: '#e8f6ee',
+          red: '#fbe9ec',
         },
         // Health states — validated palette (see dataviz validator). Loudest thing on screen.
         risk: {

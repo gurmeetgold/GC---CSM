@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AnswerEngine, AnswerResult, EvaluatedAccount } from '../../answer';
 import { RiskBadge } from '../components/RiskBadge';
+import { PageHeader } from '../ui/PageHeader';
 
 const SUGGESTIONS = [
   'Which accounts are at risk?',
@@ -14,11 +15,14 @@ export function AskAnything({
   book,
   onSelect,
   engine,
+  seed,
 }: {
   book: EvaluatedAccount[];
   onSelect: (id: string) => void;
   /** Injected from the composition point; a ClaudeAnswerEngine swaps in with zero UI change. */
   engine: AnswerEngine;
+  /** A question seeded from the top-bar search; asked automatically. */
+  seed?: string;
 }) {
   const answerEngine = engine;
   const [question, setQuestion] = useState('');
@@ -35,17 +39,14 @@ export function AskAnything({
     setPending(false);
   }
 
+  useEffect(() => {
+    if (seed && seed.trim()) void ask(seed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed]);
+
   return (
     <section aria-labelledby="ask-heading" className="mx-auto max-w-2xl">
-      <div className="mb-5">
-        <h2 id="ask-heading" className="text-lg font-semibold text-ink">
-          Ask anything
-        </h2>
-        <p className="text-sm text-ink-soft">
-          Ask a question about your book in plain language. Answers come from the same computed signals you
-          see across the app.
-        </p>
-      </div>
+      <PageHeader title="Ask anything" subtitle="Ask a question about your book in plain language. Answers come from the same computed signals you see across the app." />
 
       <form
         onSubmit={(ev) => {

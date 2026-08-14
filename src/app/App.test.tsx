@@ -1,49 +1,55 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from './App';
 
 /**
- * Smoke tests only — the app glue, not the logic. We confirm the shell renders,
- * the book loads through the DataSource seam, and the three screens are reachable.
+ * Smoke tests for the app shell — glue, not logic. Confirm the SignalOS shell
+ * renders, the book loads (My Portfolio), and the screens are reachable.
  */
 describe('App (smoke)', () => {
-  it('renders the header and loads the book', async () => {
+  const nav = (name: RegExp) => screen.getAllByRole('button', { name })[0]!;
+
+  it('renders the SignalOS shell and loads the portfolio', async () => {
     render(<App />);
-    expect(screen.getByText('Customer Success Copilot')).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByText(/at risk ·/)).toBeInTheDocument();
-    });
+    expect(screen.getByText('SignalOS')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('My Portfolio')).toBeInTheDocument());
+    expect(screen.getByText('ARR Managed')).toBeInTheDocument();
   });
 
-  it('navigates to the at-risk screen', async () => {
+  it('navigates to the Executive view', async () => {
     render(<App />);
-    await waitFor(() => screen.getByText(/at risk ·/));
-    fireEvent.click(screen.getByRole('button', { name: /At-risk accounts/ }));
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /at-risk accounts/i })).toBeInTheDocument();
-    });
+    await waitFor(() => screen.getByText('My Portfolio'));
+    fireEvent.click(nav(/Executive View/));
+    await waitFor(() => expect(screen.getByText('Net Revenue Retention')).toBeInTheDocument());
   });
 
-  it('navigates to the leadership screen and shows the hero metrics', async () => {
+  it('navigates to the Renewals center', async () => {
     render(<App />);
-    await waitFor(() => screen.getByText(/at risk ·/));
-    fireEvent.click(screen.getByRole('button', { name: /Leadership/ }));
-    await waitFor(() => {
-      expect(screen.getByText('Net Revenue Retention')).toBeInTheDocument();
-      expect(screen.getByText('ARR at risk')).toBeInTheDocument();
-    });
+    await waitFor(() => screen.getByText('My Portfolio'));
+    fireEvent.click(nav(/^Renewals$/));
+    await waitFor(() => expect(screen.getByText('Renewals & Risk Center')).toBeInTheDocument());
   });
 
-  it('navigates to the ask-anything screen and answers a question', async () => {
+  it('navigates to the Support view', async () => {
     render(<App />);
-    await waitFor(() => screen.getByText(/at risk ·/));
-    fireEvent.click(screen.getByRole('button', { name: /Ask anything/ }));
-    const input = await screen.findByLabelText(/Ask a question/i);
+    await waitFor(() => screen.getByText('My Portfolio'));
+    fireEvent.click(nav(/Technical Health/));
+    await waitFor(() => expect(screen.getByText('Support & Technical Attention')).toBeInTheDocument());
+  });
+
+  it('asks a question from the top-bar search', async () => {
+    render(<App />);
+    await waitFor(() => screen.getByText('My Portfolio'));
+    const input = screen.getByLabelText(/Search or ask/i);
     fireEvent.change(input, { target: { value: 'which accounts are at risk?' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Ask' }));
-    await waitFor(() => {
-      expect(screen.getByText(/Interpreted as:/)).toBeInTheDocument();
-    });
+    fireEvent.submit(input.closest('form')!);
+    await waitFor(() => expect(screen.getByText(/Interpreted as:/)).toBeInTheDocument());
+  });
+
+  it('disables the unbuilt nav items (Playbooks, Settings)', async () => {
+    render(<App />);
+    await waitFor(() => screen.getByText('My Portfolio'));
+    expect(nav(/Playbooks/)).toBeDisabled();
+    expect(nav(/Settings/)).toBeDisabled();
   });
 });

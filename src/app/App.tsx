@@ -1,112 +1,85 @@
 import { useMemo, useState } from 'react';
 import { useBook } from './useBook';
-import { HealthOverview } from './screens/HealthOverview';
-import { RedAccounts } from './screens/RedAccounts';
+import { AppShell, type Route } from './ui/AppShell';
+import { Home } from './screens/Home';
+import { AccountsScreen } from './screens/AccountsScreen';
+import { AccountDetail } from './screens/AccountDetail';
+import { RenewalsCenter } from './screens/RenewalsCenter';
+import { OpportunitiesScreen } from './screens/OpportunitiesScreen';
+import { SupportScreen } from './screens/SupportScreen';
+import { Executive } from './screens/Executive';
 import { AskAnything } from './screens/AskAnything';
-import { Leadership } from './screens/Leadership';
 import { createAnswerEngine } from '../answer';
 import { HttpAnswerEngine } from '../answer/http/HttpAnswerEngine';
 import { backendUrl } from './bookProvider';
 
-type Tab = 'overview' | 'red' | 'leadership' | 'ask';
-
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'overview', label: 'Health overview' },
-  { key: 'red', label: 'At-risk accounts' },
-  { key: 'leadership', label: 'Leadership' },
-  { key: 'ask', label: 'Ask anything' },
-];
-
 export default function App() {
   const { loading, error, book, now, reasoning } = useBook();
-  const [tab, setTab] = useState<Tab>('overview');
-  const [focusId, setFocusId] = useState<string | null>(null);
-  // Backend present → route answers through it (real Claude); otherwise the mock.
+  const [route, setRoute] = useState<Route>('home');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [askSeed, setAskSeed] = useState('');
+
   const answerEngine = useMemo(() => {
     const url = backendUrl();
     return url ? new HttpAnswerEngine(url) : createAnswerEngine('mock');
   }, []);
 
-  // Navigating to an account jumps to the reasoning screen and highlights it.
+  const snapshot = useMemo(() => {
+    const s = { total: book.length, healthy: 0, atRisk: 0, critical: 0 };
+    for (const e of book) {
+      if (e.evaluation.riskLevel === 'green') s.healthy++;
+      else if (e.evaluation.riskLevel === 'yellow') s.atRisk++;
+      else s.critical++;
+    }
+    return s;
+  }, [book]);
+
+  function navigate(r: Route) {
+    setRoute(r);
+    setSelectedId(null);
+  }
   function selectAccount(id: string) {
-    setFocusId(id);
-    setTab('red');
+    setSelectedId(id);
+    setRoute('accounts');
+  }
+  function ask(q: string) {
+    setAskSeed(q);
+    setRoute('ask');
+    setSelectedId(null);
   }
 
-  const redCount = book.filter((e) => e.evaluation.riskLevel === 'red').length;
+  const selected = selectedId ? book.find((e) => e.account.id === selectedId) ?? null : null;
 
   return (
-    <div className="min-h-screen bg-surface-sunken">
-      <a
-        href="#main"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-ink focus:px-3 focus:py-2 focus:text-sm focus:text-white"
-      >
-        Skip to content
-      </a>
-
-      <header className="sticky top-0 z-30 border-b border-line bg-surface/85 backdrop-blur-md">
-        <div className="mx-auto max-w-6xl px-4 py-3.5 sm:px-6">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-[13px] font-bold text-white shadow-card">
-              CS
-            </div>
-            <div>
-              <h1 className="text-sm font-semibold leading-tight text-ink">Customer Success Copilot</h1>
-              <p className="text-xs text-ink-faint">Your book of business, at a glance</p>
-            </div>
-          </div>
-
-          <nav className="mt-3.5 flex gap-1" aria-label="Primary">
-            {TABS.map((t) => {
-              const active = tab === t.key;
-              return (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => {
-                    setTab(t.key);
-                    if (t.key !== 'red') setFocusId(null);
-                  }}
-                  aria-current={active ? 'page' : undefined}
-                  className={`relative rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-200 ease-calm ${
-                    active ? 'bg-brand-soft text-brand' : 'text-ink-soft hover:bg-surface-sunken hover:text-ink'
-                  }`}
-                >
-                  {t.label}
-                  {t.key === 'red' && redCount > 0 && (
-                    <span className="ml-1.5 rounded-full bg-risk-redBg px-1.5 py-0.5 text-xs font-semibold text-risk-red">
-                      {redCount}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-      </header>
-
-      <main id="main" className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
-        {loading && <LoadingState />}
-        {error && !loading && <ErrorState message={error} />}
-        {!loading && !error && (
-          <>
-            {tab === 'overview' && <HealthOverview book={book} now={now} onSelect={selectAccount} />}
-            {tab === 'red' && <RedAccounts book={book} focusId={focusId} reasoning={reasoning} />}
-            {tab === 'leadership' && <Leadership book={book} now={now} />}
-            {tab === 'ask' && <AskAnything book={book} onSelect={selectAccount} engine={answerEngine} />}
-          </>
-        )}
-      </main>
-    </div>
+    <AppShell route={route} onNavigate={navigate} onAsk={ask} snapshot={snapshot}>
+      {loading && <LoadingState />}
+      {error && !loading && <ErrorState message={error} />}
+      {!loading && !error && (
+        <>
+          {route === 'home' && <Home book={book} now={now} onSelect={selectAccount} onAsk={ask} onNavigate={navigate} />}
+          {route === 'accounts' && !selected && <AccountsScreen book={book} now={now} reasoning={reasoning} onSelect={selectAccount} />}
+          {route === 'accounts' && selected && (
+            <AccountDetail e={selected} now={now} reasoning={reasoning[selected.account.id]} onBack={() => setSelectedId(null)} />
+          )}
+          {route === 'renewals' && <RenewalsCenter book={book} now={now} onSelect={selectAccount} />}
+          {route === 'opportunities' && <OpportunitiesScreen book={book} onSelect={selectAccount} />}
+          {route === 'support' && <SupportScreen book={book} now={now} onSelect={selectAccount} />}
+          {route === 'executive' && <Executive book={book} now={now} />}
+          {route === 'ask' && <AskAnything book={book} onSelect={selectAccount} engine={answerEngine} seed={askSeed} />}
+        </>
+      )}
+    </AppShell>
   );
 }
 
 function LoadingState() {
   return (
-    <div className="grid gap-3" aria-busy="true" aria-live="polite">
-      {[0, 1, 2, 3].map((i) => (
-        <div key={i} className="h-16 animate-pulse rounded-xl border border-line bg-surface" />
-      ))}
+    <div className="space-y-4" aria-busy="true" aria-live="polite">
+      <div className="h-8 w-64 animate-pulse rounded-lg bg-surface" />
+      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        {[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-28 animate-pulse rounded-xl border border-line bg-surface" />)}
+      </div>
+      <div className="h-72 animate-pulse rounded-xl border border-line bg-surface" />
       <span className="sr-only">Loading your book of business…</span>
     </div>
   );

@@ -19,7 +19,7 @@ function SignalRow({ signal }: { signal: Signal }) {
   );
 }
 
-function AccountCard({ e, highlight, narrative }: { e: EvaluatedAccount; highlight: boolean; narrative?: string }) {
+function AccountCard({ e, highlight, narrative, onSelect }: { e: EvaluatedAccount; highlight: boolean; narrative?: string; onSelect?: (id: string) => void }) {
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     if (highlight && ref.current) {
@@ -44,7 +44,13 @@ function AccountCard({ e, highlight, narrative }: { e: EvaluatedAccount; highlig
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-base font-semibold text-ink">{e.account.name}</h3>
+            {onSelect ? (
+              <button type="button" onClick={() => onSelect(e.account.id)} className="text-base font-semibold text-ink hover:text-brand">
+                {e.account.name}
+              </button>
+            ) : (
+              <h3 className="text-base font-semibold text-ink">{e.account.name}</h3>
+            )}
             <RiskBadge level={e.evaluation.riskLevel} size="sm" />
           </div>
           <p className="mt-1 text-sm text-ink-soft">
@@ -102,11 +108,13 @@ export function RedAccounts({
   book,
   focusId,
   reasoning = {},
+  onSelect,
 }: {
   book: EvaluatedAccount[];
   focusId: string | null;
   /** accountId → narrative reasoning (present in live/backend mode). */
   reasoning?: Record<string, string>;
+  onSelect?: (id: string) => void;
 }) {
   const reds = book
     .filter((e) => e.evaluation.riskLevel === 'red')
@@ -157,6 +165,7 @@ export function RedAccounts({
             e={e}
             highlight={focusId === e.account.id}
             narrative={reasoning[e.account.id]}
+            onSelect={onSelect}
           />
         ))}
       </div>
