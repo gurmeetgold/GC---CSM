@@ -7,6 +7,9 @@ const account: Account = {
   id: 'a', name: 'Acme', segment: 'enterprise', arr: 200000, renewalDate: '2026-09-30',
   licensedSeats: 100, activeUsers: 40, usageHistory: [], contacts: [], interactions: [],
   openTickets: 0, criticalTickets: 0, createdAt: '2023-01-01',
+  responsiveness: [], featureUsage: [], activatedAt: '2023-02-01',
+  billingFlags: { overdueInvoice: false, disputedInvoice: false, pricingPushback: false },
+  ownerCsm: 'CSM', priorArr: 200000, lifecycleState: 'active',
 };
 
 const adoptionSignal: Signal = {

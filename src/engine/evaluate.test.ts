@@ -9,6 +9,9 @@ const T = DEFAULT_THRESHOLDS;
 function risk(severity: Signal['severity']): Signal {
   return { type: 'adoption_gap', polarity: 'risk', severity, headline: '', detail: '', evidence: {} };
 }
+function renewal(severity: Signal['severity']): Signal {
+  return { type: 'renewal_risk', polarity: 'risk', severity, headline: '', detail: '', evidence: {} };
+}
 const opportunity: Signal = {
   type: 'growth_opportunity', polarity: 'opportunity', severity: 'info', headline: '', detail: '', evidence: {},
 };
@@ -33,6 +36,24 @@ describe('rollUp', () => {
 
   it('opportunity signals do not push an otherwise-healthy account off green', () => {
     expect(rollUp([opportunity, opportunity])).toBe('green');
+  });
+
+  // --- Phase 3: renewal is an amplifier, not a stacking driver ---
+  it('a single warning driver under a low-jeopardy (warning) renewal stays YELLOW', () => {
+    expect(rollUp([risk('warning'), renewal('warning')])).toBe('yellow');
+  });
+
+  it('a critical-tier renewal amplifies a single warning driver to RED', () => {
+    expect(rollUp([risk('warning'), renewal('critical')])).toBe('red');
+  });
+
+  it('does not count the renewal warning as a second stacking driver', () => {
+    // one real driver + renewal warning must NOT behave like two warnings.
+    expect(rollUp([risk('warning'), renewal('warning')])).not.toBe('red');
+  });
+
+  it('two real warning drivers are still red regardless of renewal tier', () => {
+    expect(rollUp([risk('warning'), risk('warning'), renewal('warning')])).toBe('red');
   });
 });
 

@@ -7,11 +7,14 @@ describe('LocalBookProvider', () => {
   it('computes the evaluated mock book in-browser (no network)', async () => {
     const { book, sourceName, now, reasoning } = await new LocalBookProvider().loadBook();
     expect(sourceName).toBe('mock');
-    expect(book).toHaveLength(25);
+    expect(book).toHaveLength(31);
     expect(now).toBeInstanceOf(Date);
-    expect(reasoning).toEqual({});
     // Evaluations are present and valid.
     expect(book.every((e) => ['green', 'yellow', 'red'].includes(e.evaluation.riskLevel))).toBe(true);
+    // Soft signals fold in, and red accounts get narrated reasoning.
+    const reds = book.filter((e) => e.evaluation.riskLevel === 'red');
+    expect(Object.keys(reasoning).length).toBe(reds.length);
+    expect(book.some((e) => e.evaluation.signals.some((s) => s.source === 'soft'))).toBe(true);
   });
 });
 

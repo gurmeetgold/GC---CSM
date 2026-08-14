@@ -17,7 +17,9 @@ import type { ClaudeClient } from './claudeClient';
 const SOFT_TYPES: Record<SoftSignalType, { polarity: 'risk' | 'opportunity'; label: string }> = {
   sentiment_decline: { polarity: 'risk', label: 'Sentiment decline' },
   champion_disengaging: { polarity: 'risk', label: 'Champion disengaging' },
+  sponsor_disengagement: { polarity: 'risk', label: 'Exec sponsor disengaging' },
   competitor_mention: { polarity: 'risk', label: 'Competitor mention' },
+  support_sentiment: { polarity: 'risk', label: 'Negative support sentiment' },
   buying_signal: { polarity: 'opportunity', label: 'Buying signal' },
 };
 
@@ -27,7 +29,7 @@ identify soft relationship signals.
 
 Return ONLY a JSON array (no prose, no markdown fences). Each element must be:
 {
-  "type": one of ["sentiment_decline","champion_disengaging","competitor_mention","buying_signal"],
+  "type": one of ["sentiment_decline","champion_disengaging","sponsor_disengagement","competitor_mention","support_sentiment","buying_signal"],
   "severity": one of ["info","warning"],
   "headline": short (<= 8 words),
   "detail": one sentence grounded in the text,

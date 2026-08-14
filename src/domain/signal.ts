@@ -17,7 +17,14 @@ export type HardSignalType =
   | 'champion_silence'
   | 'renewal_risk'
   | 'support_strain'
-  | 'growth_opportunity'; // positive / expansion signal
+  | 'growth_opportunity' // positive / expansion signal
+  // Phase 3 hard signals
+  | 'engagement_cadence'
+  | 'email_responsiveness'
+  | 'feature_depth'
+  | 'stickiness_decline'
+  | 'onboarding_stalled'
+  | 'billing_friction';
 
 /**
  * Soft signals — extracted by Claude from call/email text (Phase 2). They are the
@@ -28,7 +35,9 @@ export type HardSignalType =
 export type SoftSignalType =
   | 'sentiment_decline'
   | 'champion_disengaging'
+  | 'sponsor_disengagement' // exec/economic-buyer stops attending + language (approved Phase 3)
   | 'competitor_mention'
+  | 'support_sentiment' // frustration in ticket wording, distinct from support_strain volume (approved Phase 3)
   | 'buying_signal'; // positive / expansion soft signal
 
 export type SignalType = HardSignalType | SoftSignalType;

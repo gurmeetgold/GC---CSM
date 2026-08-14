@@ -123,5 +123,12 @@ function minimalAccount(id: string, name: string): Account {
     openTickets: 0,
     criticalTickets: 0,
     createdAt: '',
+    responsiveness: [],
+    featureUsage: [],
+    activatedAt: null,
+    billingFlags: { overdueInvoice: false, disputedInvoice: false, pricingPushback: false },
+    ownerCsm: '',
+    priorArr: 0,
+    lifecycleState: 'active',
   };
 }

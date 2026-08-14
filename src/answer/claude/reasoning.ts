@@ -21,9 +21,17 @@ const SIGNAL_KEYWORDS: Record<SignalType, string[]> = {
   renewal_risk: ['renewal', 'renews in', 'up for renewal', 'renewal date', 'contract end'],
   support_strain: ['support ticket', 'support strain', 'open tickets', 'critical ticket', 'sev-1', 'sev 1', 'escalation'],
   growth_opportunity: ['expansion', 'growth opportunity', 'near the seat limit', 'at seat limit', 'upsell'],
+  engagement_cadence: ['engagement cadence', 'meeting frequency', 'gone quiet', 'fewer touchpoints', 'stopped meeting'],
+  email_responsiveness: ['email response', 'reply time', 'slow to reply', 'not replying', 'unanswered email'],
+  feature_depth: ['feature adoption', 'stopped using', 'abandoned feature', 'key feature', 'feature usage'],
+  stickiness_decline: ['stickiness', 'logins per', 'logging in less', 'login frequency'],
+  onboarding_stalled: ['onboarding', 'never activated', 'activation milestone', 'stalled rollout'],
+  billing_friction: ['billing', 'invoice', 'overdue', 'payment', 'pricing pushback'],
   sentiment_decline: ['sentiment', 'frustrat', 'unhappy', 'negative tone', 'dissatisf'],
-  champion_disengaging: ['disengag', 'champion pulling back', 'losing the champion', 'champion less involved'],
+  champion_disengaging: ['champion pulling back', 'losing the champion', 'champion less involved'],
+  sponsor_disengagement: ['sponsor', 'exec disengag', 'decision-maker stopped', 'executive stopped attending'],
   competitor_mention: ['competitor', 'evaluating alternative', 'looking at other', 'rival vendor'],
+  support_sentiment: ['frustrated ticket', 'angry', 'escalated tone', 'furious', 'support frustration'],
   buying_signal: ['buying signal', 'ready to buy', 'wants to expand', 'asking about pricing', 'interested in purchasing'],
 };
 

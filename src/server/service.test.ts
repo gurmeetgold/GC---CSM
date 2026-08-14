@@ -12,10 +12,11 @@ describe('BookService (mock config)', () => {
     const payload = await svc.getBook();
     expect(payload.sourceName).toBe('mock');
     expect(payload.answerEngineName).toBe('mock');
-    expect(payload.accounts).toHaveLength(25);
+    expect(payload.accounts).toHaveLength(31);
     const counts = { red: 0, yellow: 0, green: 0 };
     for (const e of payload.accounts) counts[e.evaluation.riskLevel]++;
-    expect(counts).toEqual({ red: 7, yellow: 5, green: 13 });
+    // With soft signals folded in (mock extractor), featuredrop stacks to red.
+    expect(counts).toEqual({ red: 7, yellow: 11, green: 13 });
   });
 
   it('answers questions over the served book', async () => {
@@ -38,6 +39,7 @@ describe('BookService (mock config)', () => {
 
   it('reports which implementations are live', () => {
     const svc = new BookService(resolveServerConfig({}));
-    expect(svc.describe()).toEqual({ dataSource: 'mock', answerEngine: 'mock', softSignals: false });
+    // Mock mode still runs deterministic soft-signal enrichment (credential-free).
+    expect(svc.describe()).toEqual({ dataSource: 'mock', answerEngine: 'mock', softSignals: true });
   });
 });

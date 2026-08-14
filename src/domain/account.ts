@@ -34,7 +34,42 @@ export interface Interaction {
 export interface UsageSnapshot {
   asOf: string; // ISO date
   activeUsers: number;
+  /** Total logins in the period. Optional; enables the stickiness (logins/user) signal. */
+  logins?: number;
 }
+
+/** Trailing email-responsiveness metrics for a window ending at `asOf`. */
+export interface ResponsivenessSnapshot {
+  asOf: string; // ISO date
+  /** Median hours for the customer to reply to our outreach in the window. */
+  medianReplyHours: number;
+  /** Share of our outreach that got any reply, 0–100. */
+  replyRatePct: number;
+}
+
+/** Per-feature usage, so we can detect a key feature being abandoned. */
+export interface FeatureUsage {
+  key: string;
+  label: string;
+  /** Core/high-value feature — only these drive the feature-depth signal. */
+  isKeyFeature: boolean;
+  /** Usage counts over time, oldest → newest. */
+  history: { asOf: string; uses: number }[];
+}
+
+/** Billing/contract friction flags. */
+export interface BillingFlags {
+  overdueInvoice: boolean;
+  disputedInvoice: boolean;
+  pricingPushback: boolean;
+}
+
+/**
+ * Coarse lifecycle/commercial state used ONLY by the leadership roll-ups
+ * (NRR/GRR, expansion, churn-reason inference). Never consumed by the signal
+ * engine, which stays purely signal-driven.
+ */
+export type LifecycleState = 'new' | 'active' | 'expanding' | 'at_risk' | 'churned';
 
 export interface Account {
   id: string;
@@ -58,4 +93,25 @@ export interface Account {
   criticalTickets: number;
   /** Account creation date — drives cold-start handling. */
   createdAt: string; // ISO date
+
+  // ---- Phase 3 additions. Required (with empty defaults) so mock and live stay
+  // key-for-key identical; the live adapter maps each from custom fields / Gong. ----
+
+  /** Trailing email-responsiveness metrics, oldest → newest. May be empty. */
+  responsiveness: ResponsivenessSnapshot[];
+  /** Per-feature usage. May be empty. */
+  featureUsage: FeatureUsage[];
+  /** When the account reached its activation milestone, or null if not yet. */
+  activatedAt: string | null;
+  /** Billing/contract friction flags. */
+  billingFlags: BillingFlags;
+
+  // ---- Leadership-only fields (not read by the signal engine) ----
+
+  /** Owning CSM — powers book-balance and per-CSM leadership reports. */
+  ownerCsm: string;
+  /** ARR one renewal-cycle ago — powers NRR/GRR (expansion vs. contraction). */
+  priorArr: number;
+  /** Coarse commercial state — powers NRR/GRR and churn-reason inference. */
+  lifecycleState: LifecycleState;
 }

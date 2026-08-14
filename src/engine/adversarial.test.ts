@@ -28,7 +28,7 @@ describe('engine adversarial robustness', () => {
       openTickets: 0,
       criticalTickets: 0,
       createdAt: '',
-    } as Account;
+    } as unknown as Account;
     expect(() => evaluate(bare, T, NOW)).not.toThrow();
     const e = evaluate(bare, T, NOW);
     expect(['green', 'yellow', 'red']).toContain(e.riskLevel);
@@ -112,7 +112,7 @@ describe('engine adversarial robustness', () => {
       openTickets: 50,
       criticalTickets: 10,
       createdAt: '2020-01-01',
-    } as Account;
+    } as unknown as Account;
     const e = evaluate(everything, T, NOW);
     expect(e.riskLevel).toBe('red');
     // usage_decline, adoption_gap, champion_silence, support_strain, renewal_risk

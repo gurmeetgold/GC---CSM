@@ -33,20 +33,29 @@ const CASES: Case[] = [
   { id: 'adventureworks', expected: 'green', mustFire: ['growth_opportunity'] },
   { id: 'wingtip', expected: 'green', mustFire: ['growth_opportunity'] },
   { id: 'coho', expected: 'green', mustFire: ['growth_opportunity'] },
-  // yellows (single weak signal)
+  // yellows (single weak signal — original set)
   { id: 'proseware', expected: 'yellow', mustFire: ['adoption_gap'] },
   { id: 'litware', expected: 'yellow', mustFire: ['champion_silence'] },
   { id: 'fourthcoffee', expected: 'yellow', mustFire: ['support_strain'] },
   { id: 'blueyonder', expected: 'yellow', mustFire: ['champion_silence'], mustNotFire: ['usage_decline'] },
   { id: 'fabrikamresidences', expected: 'yellow', mustFire: ['adoption_gap'] },
+  // yellows (NEW Phase 3 hard signals, each in isolation)
+  { id: 'cadencedrop', expected: 'yellow', mustFire: ['engagement_cadence'] },
+  { id: 'slowreplies', expected: 'yellow', mustFire: ['email_responsiveness'] },
+  { id: 'stickydrop', expected: 'yellow', mustFire: ['stickiness_decline'], mustNotFire: ['usage_decline'] },
+  { id: 'onboardstall', expected: 'yellow', mustFire: ['onboarding_stalled'] },
+  // hard-only yellow; folds to red with the soft competitor mention (pipeline test)
+  { id: 'featuredrop', expected: 'yellow', mustFire: ['feature_depth'] },
+  // renewal jeopardy tiers: far-off, low-ARR, single-driver renewals are now YELLOW
+  { id: 'relecloud', expected: 'yellow', mustFire: ['champion_silence', 'renewal_risk'] },
+  { id: 'margiestravel', expected: 'yellow', mustFire: ['adoption_gap', 'renewal_risk'] },
   // reds
+  { id: 'billinghold', expected: 'red', mustFire: ['billing_friction'] },
   { id: 'contosopharma', expected: 'red', mustFire: ['usage_decline'] },
   { id: 'graphicdesign', expected: 'red', mustFire: ['adoption_gap', 'champion_silence'] },
-  { id: 'vanarsdel', expected: 'red', mustFire: ['adoption_gap', 'renewal_risk'] },
+  { id: 'vanarsdel', expected: 'red', mustFire: ['adoption_gap', 'renewal_risk'] }, // imminent → critical tier
   { id: 'alpineski', expected: 'red', mustFire: ['support_strain'] },
   { id: 'bestforyou', expected: 'red', mustFire: ['usage_decline', 'adoption_gap', 'champion_silence'] },
-  { id: 'relecloud', expected: 'red', mustFire: ['champion_silence', 'renewal_risk'] },
-  { id: 'margiestravel', expected: 'red', mustFire: ['adoption_gap', 'renewal_risk'] },
   // cold-start (thin data must never read red)
   { id: 'treyresearch', expected: 'green', mustNotFire: ['usage_decline', 'adoption_gap', 'champion_silence'] },
   { id: 'lucerne', expected: 'green', mustNotFire: ['usage_decline', 'adoption_gap'] },
@@ -59,8 +68,8 @@ function evalById(id: string) {
 }
 
 describe('mock book of business', () => {
-  it('contains exactly 25 accounts', () => {
-    expect(MOCK_ACCOUNTS).toHaveLength(25);
+  it('contains exactly 31 accounts', () => {
+    expect(MOCK_ACCOUNTS).toHaveLength(31);
   });
 
   it('has a test case for every mock account (and vice versa)', () => {

@@ -34,6 +34,19 @@ const ACCOUNT_SCHEMA: Record<keyof Account, Checker> = {
   openTickets: isNumber,
   criticalTickets: isNumber,
   createdAt: isString,
+  // Phase 3 fields — both sources must emit these identically.
+  responsiveness: (v) => Array.isArray(v),
+  featureUsage: (v) => Array.isArray(v),
+  activatedAt: isStringOrNull,
+  billingFlags: (v) =>
+    !!v && typeof v === 'object' &&
+    typeof (v as Record<string, unknown>).overdueInvoice === 'boolean' &&
+    typeof (v as Record<string, unknown>).disputedInvoice === 'boolean' &&
+    typeof (v as Record<string, unknown>).pricingPushback === 'boolean',
+  ownerCsm: isString,
+  priorArr: isNumber,
+  lifecycleState: (v) =>
+    v === 'new' || v === 'active' || v === 'expanding' || v === 'at_risk' || v === 'churned',
 };
 
 function assertAccountShape(a: Account, label: string): void {

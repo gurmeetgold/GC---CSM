@@ -1,7 +1,8 @@
 import { createDataSource, resolveDataSourceKind } from '../data';
-import { evaluate } from '../engine';
-import { DEFAULT_THRESHOLDS } from '../domain';
 import type { EvaluatedAccount } from '../answer';
+import { MockSoftSignalExtractor } from '../answer/mock/MockSoftSignalExtractor';
+import { MockReasoningWriter } from '../answer/mock/MockReasoningWriter';
+import { buildBook, writeRedReasoning } from '../health/pipeline';
 
 /**
  * Where the browser gets the evaluated book from. Two providers, chosen at the
@@ -28,18 +29,21 @@ export interface BookProvider {
   loadBook(): Promise<LoadedBook>;
 }
 
-/** In-browser: mock data + the pure engine. No network, no credentials. */
+/**
+ * In-browser: mock data + the pure engine + deterministic soft signals and
+ * reasoning. No network, no credentials — the full experience (hard + soft signals,
+ * narrated red accounts) runs entirely client-side.
+ */
 export class LocalBookProvider implements BookProvider {
   async loadBook(): Promise<LoadedBook> {
     // Always mock in the browser — the live source is server-side only.
     const source = createDataSource(resolveDataSourceKind('mock'));
     const now = source.now();
-    const accounts = await source.listAccounts();
-    const book = accounts.map((account) => ({
-      account,
-      evaluation: evaluate(account, DEFAULT_THRESHOLDS, now),
-    }));
-    return { book, now, sourceName: source.name, reasoning: {} };
+    const book = await buildBook(source, { extractor: new MockSoftSignalExtractor() });
+    const written = await writeRedReasoning(book, new MockReasoningWriter());
+    const reasoning: Record<string, string> = {};
+    for (const r of written) reasoning[r.accountId] = r.reasoning;
+    return { book, now, sourceName: source.name, reasoning };
   }
 }
 

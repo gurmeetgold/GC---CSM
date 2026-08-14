@@ -215,8 +215,16 @@ function humanSignal(type: SignalType): string {
     growth_opportunity: 'a growth opportunity',
     sentiment_decline: 'a sentiment decline',
     champion_disengaging: 'a disengaging champion',
+    sponsor_disengagement: 'an disengaging exec sponsor',
     competitor_mention: 'a competitor mention',
+    support_sentiment: 'negative support sentiment',
     buying_signal: 'a buying signal',
+    engagement_cadence: 'a drop in engagement cadence',
+    email_responsiveness: 'falling email responsiveness',
+    feature_depth: 'an abandoned key feature',
+    stickiness_decline: 'a stickiness decline',
+    onboarding_stalled: 'a stalled onboarding',
+    billing_friction: 'billing friction',
   };
   return map[type];
 }

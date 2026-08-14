@@ -1,22 +1,41 @@
-import type { Account, Contact, Interaction, Segment, UsageSnapshot } from '../../domain';
+import type {
+  Account,
+  BillingFlags,
+  Contact,
+  FeatureUsage,
+  Interaction,
+  LifecycleState,
+  ResponsivenessSnapshot,
+  Segment,
+  UsageSnapshot,
+} from '../../domain';
 import { daysAgo, daysAhead } from './referenceTime';
 
 /**
- * 25 deterministic mock accounts, each engineered to exercise specific branches
- * of the signal engine. The `expected` risk level in the comment beside each is
- * asserted by the table-driven test in mockAccounts.test.ts — if a signal or
- * threshold changes, that test catches the drift.
+ * Deterministic mock accounts, each engineered to exercise specific branches of the
+ * signal engine (hard + soft) and to make the leadership roll-ups realistic. The
+ * `expected` comment beside each is the HARD-signal risk level asserted by
+ * mockAccounts.test.ts (soft signals are folded in by the pipeline, tested there).
  *
- * Archetype coverage:
- *   - healthy greens
- *   - single-weak-signal yellows (adoption / champion / support each alone)
- *   - stacked reds (critical, or ≥2 warnings, or renewal-amplified)
- *   - expansion / growth opportunities (green risk + positive signal)
- *   - cold-start accounts (thin data must never read red)
- *   - a renewal-proximate-but-healthy account (proximity alone ≠ risk)
+ * Every field the live adapter will populate is populated here too, so the two
+ * sources stay shape-identical (the contract test proves it).
  */
 
+const CSMS = ['Maya Chen', 'Devin Park', 'Rosa Alvarez', 'Tom Becker'] as const;
+
 // --- builder ---------------------------------------------------------------
+
+interface CadenceSpec {
+  /** call/meeting touchpoints in the prior 60–120d window and the recent 0–60d window. */
+  priorTouchpoints: number;
+  recentTouchpoints: number;
+}
+interface FeatureSpec {
+  label: string;
+  isKeyFeature: boolean;
+  prior: number;
+  recent: number;
+}
 
 interface Spec {
   id: string;
@@ -27,22 +46,37 @@ interface Spec {
   seats: number;
   active: number;
   /** activeUsers at [120d, 90d, 60d, 30d] ago; omit for thin/empty history. */
-  usage?: [number, number, number, number] | number[];
-  championLastContactDays: number | null; // null = never; undefined handled below
-  hasChampion?: boolean; // default true
+  usage?: number[];
+  /** logins parallel to `usage` (enables the stickiness signal). */
+  logins?: number[];
+  championLastContactDays: number | null;
+  hasChampion?: boolean;
   openTickets?: number;
   criticalTickets?: number;
-  createdDaysAgo?: number; // default 500 (established)
-  interactionSummaries?: string[];
+  createdDaysAgo?: number;
+  interactionSummaries?: { text: string; kind?: Interaction['kind'] }[];
+  // Phase 3 signal inputs
+  cadence?: CadenceSpec;
+  responsiveness?: ResponsivenessSnapshot[];
+  features?: FeatureSpec[];
+  activatedDaysAgo?: number | null;
+  billing?: Partial<BillingFlags>;
+  // Leadership inputs
+  ownerCsm?: string;
+  priorArr?: number;
+  lifecycleState?: LifecycleState;
+  /** Recency of general CSM activity (interactions + secondary contact). Default 7. */
+  lastTouchDays?: number;
 }
 
 function usageFrom(spec: Spec): UsageSnapshot[] {
   if (!spec.usage || spec.usage.length === 0) return [];
   const offsets = [120, 90, 60, 30];
-  return spec.usage.map((activeUsers, i) => ({
-    asOf: daysAgo(offsets[i] ?? 30 - i),
-    activeUsers,
-  }));
+  return spec.usage.map((activeUsers, i) => {
+    const snap: UsageSnapshot = { asOf: daysAgo(offsets[i] ?? 30 - i * 10), activeUsers };
+    if (spec.logins && typeof spec.logins[i] === 'number') snap.logins = spec.logins[i];
+    return snap;
+  });
 }
 
 function contactsFrom(spec: Spec): Contact[] {
@@ -55,9 +89,7 @@ function contactsFrom(spec: Spec): Contact[] {
           title: 'VP of Operations',
           isChampion: true,
           lastContactedAt:
-            spec.championLastContactDays === null
-              ? null
-              : daysAgo(spec.championLastContactDays ?? 15),
+            spec.championLastContactDays === null ? null : daysAgo(spec.championLastContactDays ?? 15),
         },
       ]
     : [];
@@ -66,19 +98,46 @@ function contactsFrom(spec: Spec): Contact[] {
     name: 'Jordan Lee',
     title: 'Program Manager',
     isChampion: false,
-    lastContactedAt: daysAgo(12),
+    lastContactedAt: daysAgo(spec.lastTouchDays ?? 7),
   };
   return [...champion, secondary];
 }
 
 function interactionsFrom(spec: Spec): Interaction[] {
+  const out: Interaction[] = [];
+  // Cadence-driven call touchpoints, placed in the prior (60–120d) and recent (0–60d) windows.
+  if (spec.cadence) {
+    for (let i = 0; i < spec.cadence.priorTouchpoints; i++) {
+      out.push({ id: `${spec.id}-cad-p${i}`, occurredAt: daysAgo(70 + i * 10), kind: 'call', summary: 'Recurring check-in call.' });
+    }
+    for (let i = 0; i < spec.cadence.recentTouchpoints; i++) {
+      out.push({ id: `${spec.id}-cad-r${i}`, occurredAt: daysAgo(15 + i * 15), kind: 'call', summary: 'Recent check-in call.' });
+    }
+  }
+  // Summary interactions (default kind rotates but avoids call so it won't skew cadence).
+  const start = spec.lastTouchDays ?? 7;
   const summaries = spec.interactionSummaries ?? [];
-  const kinds: Interaction['kind'][] = ['call', 'email', 'meeting'];
-  return summaries.map((summary, i) => ({
-    id: `${spec.id}-int-${i}`,
-    occurredAt: daysAgo(7 + i * 14),
-    kind: kinds[i % kinds.length]!,
-    summary,
+  summaries.forEach((s, i) => {
+    out.push({
+      id: `${spec.id}-int-${i}`,
+      occurredAt: daysAgo(start + i * 14),
+      kind: s.kind ?? (i % 2 === 0 ? 'meeting' : 'email'),
+      summary: s.text,
+    });
+  });
+  return out;
+}
+
+function featuresFrom(spec: Spec): FeatureUsage[] {
+  if (!spec.features) return [];
+  return spec.features.map((f, i) => ({
+    key: `${spec.id}-feat-${i}`,
+    label: f.label,
+    isKeyFeature: f.isKeyFeature,
+    history: [
+      { asOf: daysAgo(90), uses: f.prior },
+      { asOf: daysAgo(20), uses: f.recent },
+    ],
   }));
 }
 
@@ -89,7 +148,14 @@ const championNames: Record<string, string> = {
   relecloud: 'Sofia Marin',
 };
 
-function build(spec: Spec): Account {
+function build(spec: Spec, index: number): Account {
+  const createdDaysAgo = spec.createdDaysAgo ?? 500;
+  const activatedAt =
+    spec.activatedDaysAgo === null
+      ? null
+      : spec.activatedDaysAgo !== undefined
+        ? daysAgo(spec.activatedDaysAgo)
+        : daysAgo(Math.max(1, createdDaysAgo - 10)); // default: activated shortly after signup
   return {
     id: spec.id,
     name: spec.name,
@@ -103,7 +169,18 @@ function build(spec: Spec): Account {
     interactions: interactionsFrom(spec),
     openTickets: spec.openTickets ?? 1,
     criticalTickets: spec.criticalTickets ?? 0,
-    createdAt: daysAgo(spec.createdDaysAgo ?? 500),
+    createdAt: daysAgo(createdDaysAgo),
+    responsiveness: spec.responsiveness ?? [],
+    featureUsage: featuresFrom(spec),
+    activatedAt,
+    billingFlags: {
+      overdueInvoice: spec.billing?.overdueInvoice ?? false,
+      disputedInvoice: spec.billing?.disputedInvoice ?? false,
+      pricingPushback: spec.billing?.pricingPushback ?? false,
+    },
+    ownerCsm: spec.ownerCsm ?? CSMS[index % CSMS.length]!,
+    priorArr: spec.priorArr ?? spec.arr,
+    lifecycleState: spec.lifecycleState ?? 'active',
   };
 }
 
@@ -112,165 +189,219 @@ function build(spec: Spec): Account {
 const SPECS: Spec[] = [
   // ---- Healthy greens ----
   {
-    id: 'northwind', name: 'Northwind Traders', segment: 'enterprise', arr: 480_000,
+    id: 'northwind', name: 'Northwind Traders', segment: 'enterprise', arr: 480_000, priorArr: 450_000,
     renewalInDays: 240, seats: 200, active: 150, usage: [140, 145, 148, 150],
-    championLastContactDays: 10, openTickets: 3,
-    interactionSummaries: ['QBR went well; expanding to a new region next quarter.', 'Champion confirmed strong internal adoption.'],
-  }, // expected: green
+    championLastContactDays: 10, openTickets: 3, ownerCsm: 'Maya Chen',
+    interactionSummaries: [{ text: 'QBR went well; expanding to a new region next quarter.' }, { text: 'Champion confirmed strong internal adoption.' }],
+  }, // green
   {
     id: 'contoso', name: 'Contoso Ltd', segment: 'mid_market', arr: 96_000,
     renewalInDays: 180, seats: 80, active: 60, usage: [58, 59, 60, 60],
-    championLastContactDays: 20, openTickets: 2,
-    interactionSummaries: ['Routine check-in, no concerns raised.'],
-  }, // expected: green
+    championLastContactDays: 20, openTickets: 2, ownerCsm: 'Devin Park',
+    interactionSummaries: [{ text: 'Routine check-in, no concerns raised.' }],
+  }, // green
   {
     id: 'fabrikam', name: 'Fabrikam Inc', segment: 'enterprise', arr: 300_000,
     renewalInDays: 300, seats: 120, active: 88, usage: [85, 86, 87, 88],
-    championLastContactDays: 15, openTickets: 1,
-    interactionSummaries: ['Team trained on new reporting module.'],
-  }, // expected: green
+    championLastContactDays: 15, openTickets: 1, ownerCsm: 'Devin Park',
+    interactionSummaries: [{ text: 'Team trained on new reporting module.' }],
+  }, // green
   {
     id: 'tailspin', name: 'Tailspin Toys', segment: 'smb', arr: 24_000,
     renewalInDays: 150, seats: 25, active: 18, usage: [17, 17, 18, 18],
-    championLastContactDays: 30, openTickets: 0,
-    interactionSummaries: ['Support resolved a minor billing question.'],
-  }, // expected: green
+    championLastContactDays: 30, openTickets: 0, ownerCsm: 'Tom Becker',
+    interactionSummaries: [{ text: 'Support resolved a minor billing question.' }],
+  }, // green
   {
     id: 'schooloffine', name: 'School of Fine Art', segment: 'smb', arr: 22_000,
     renewalInDays: 130, seats: 20, active: 15, usage: [14, 14, 15, 15],
-    championLastContactDays: 22, openTickets: 1,
-    interactionSummaries: ['Renewed enthusiasm after onboarding refresh.'],
-  }, // expected: green
+    championLastContactDays: 22, openTickets: 1, ownerCsm: 'Tom Becker',
+    interactionSummaries: [{ text: 'Renewed enthusiasm after onboarding refresh.' }],
+  }, // green
   {
     id: 'worldwide', name: 'World Wide Importers', segment: 'enterprise', arr: 420_000,
     renewalInDays: 280, seats: 250, active: 180, usage: [175, 178, 179, 180],
-    championLastContactDays: 14, openTickets: 4,
-    interactionSummaries: ['Executive sponsor reaffirmed multi-year commitment.'],
-  }, // expected: green
+    championLastContactDays: 14, openTickets: 4, ownerCsm: 'Maya Chen',
+    interactionSummaries: [{ text: 'Executive sponsor reaffirmed multi-year commitment.' }],
+  }, // green
   {
     id: 'wideworld', name: 'Wide World Traders', segment: 'mid_market', arr: 78_000,
     renewalInDays: 175, seats: 55, active: 30, usage: [29, 30, 30, 30],
-    championLastContactDays: 40, openTickets: 5,
-    interactionSummaries: ['Adoption steady near the healthy floor; watch utilization.'],
-  }, // expected: green (54.5% adoption, just above the 50% floor)
+    championLastContactDays: 40, openTickets: 5, ownerCsm: 'Tom Becker',
+    interactionSummaries: [{ text: 'Adoption steady near the healthy floor; watch utilization.' }],
+  }, // green (54.5% adoption, just above the floor)
 
   // ---- Renewal-proximate but healthy: proximity alone must NOT read as risk ----
   {
     id: 'humongous', name: 'Humongous Insurance', segment: 'enterprise', arr: 340_000,
     renewalInDays: 50, seats: 140, active: 110, usage: [106, 108, 109, 110],
-    championLastContactDays: 30, openTickets: 3,
-    interactionSummaries: ['Renewal paperwork in motion; account healthy.'],
-  }, // expected: green (renews in 50d but nothing else fires → renewal_risk stays silent)
+    championLastContactDays: 30, openTickets: 3, ownerCsm: 'Devin Park',
+    interactionSummaries: [{ text: 'Renewal paperwork in motion; account healthy.' }],
+  }, // green
 
   // ---- Expansion / growth opportunities (green risk + growth signal) ----
   {
-    id: 'adventureworks', name: 'Adventure Works', segment: 'mid_market', arr: 120_000,
-    renewalInDays: 200, seats: 100, active: 96, usage: [80, 85, 90, 96],
-    championLastContactDays: 12, openTickets: 1,
-    interactionSummaries: ['Usage climbing fast; asked about additional seats.', 'New team onboarded in the marketing org.'],
-  }, // expected: green + growth_opportunity
+    id: 'adventureworks', name: 'Adventure Works', segment: 'mid_market', arr: 120_000, priorArr: 95_000,
+    renewalInDays: 200, seats: 100, active: 96, usage: [80, 85, 90, 96], lifecycleState: 'expanding',
+    championLastContactDays: 12, openTickets: 1, ownerCsm: 'Rosa Alvarez',
+    interactionSummaries: [{ text: 'Usage climbing fast; asked about additional seats and pricing to expand.' }, { text: 'New team onboarded in the marketing org.' }],
+  }, // green + growth
   {
-    id: 'wingtip', name: 'Wingtip Toys', segment: 'enterprise', arr: 360_000,
-    renewalInDays: 220, seats: 150, active: 150, usage: [120, 130, 140, 150],
-    championLastContactDays: 8, openTickets: 2,
-    interactionSummaries: ['At seat capacity — expansion conversation opened.', 'Two new departments requesting access.'],
-  }, // expected: green + growth_opportunity (at limit)
+    id: 'wingtip', name: 'Wingtip Toys', segment: 'enterprise', arr: 360_000, priorArr: 300_000,
+    renewalInDays: 220, seats: 150, active: 150, usage: [120, 130, 140, 150], lifecycleState: 'expanding',
+    championLastContactDays: 8, openTickets: 2, ownerCsm: 'Rosa Alvarez',
+    interactionSummaries: [{ text: 'At seat capacity — wants to expand, two new departments requesting access.' }],
+  }, // green + growth (at limit)
   {
-    id: 'coho', name: 'Coho Vineyard', segment: 'smb', arr: 26_000,
-    renewalInDays: 100, seats: 25, active: 23, usage: [18, 20, 22, 23],
-    championLastContactDays: 16, openTickets: 0,
-    interactionSummaries: ['Power users pushing near the seat ceiling.'],
-  }, // expected: green + growth_opportunity
+    id: 'coho', name: 'Coho Vineyard', segment: 'smb', arr: 26_000, priorArr: 20_000,
+    renewalInDays: 100, seats: 25, active: 23, usage: [18, 20, 22, 23], lifecycleState: 'expanding',
+    championLastContactDays: 16, openTickets: 0, ownerCsm: 'Rosa Alvarez',
+    interactionSummaries: [{ text: 'Power users pushing near the seat ceiling.' }],
+  }, // green + growth
 
   // ---- Single-weak-signal yellows ----
   {
     id: 'proseware', name: 'Proseware Inc', segment: 'mid_market', arr: 72_000,
     renewalInDays: 190, seats: 100, active: 42, usage: [44, 44, 43, 42],
-    championLastContactDays: 20, openTickets: 2,
-    interactionSummaries: ['Only part of the org has rolled out; adoption stalling.'],
-  }, // expected: yellow (adoption gap only)
+    championLastContactDays: 20, openTickets: 2, ownerCsm: 'Rosa Alvarez',
+    interactionSummaries: [{ text: 'Only part of the org has rolled out; adoption stalling.' }],
+  }, // yellow (adoption gap only)
   {
     id: 'litware', name: 'Litware Inc', segment: 'smb', arr: 30_000,
     renewalInDays: 160, seats: 40, active: 28, usage: [27, 27, 28, 28],
-    championLastContactDays: 60, openTickets: 1,
-    interactionSummaries: ['Champion has gone quiet since the reorg.'],
-  }, // expected: yellow (champion silence only)
+    championLastContactDays: 60, openTickets: 1, ownerCsm: 'Tom Becker', lastTouchDays: 58,
+    interactionSummaries: [{ text: 'Champion has gone quiet since the reorg.' }],
+  }, // yellow (champion silence only)
   {
     id: 'fourthcoffee', name: 'Fourth Coffee', segment: 'smb', arr: 20_000,
     renewalInDays: 170, seats: 30, active: 21, usage: [20, 20, 21, 21],
-    championLastContactDays: 25, openTickets: 10,
-    interactionSummaries: ['Spike in how-to tickets around the new UI.'],
-  }, // expected: yellow (support volume only)
+    championLastContactDays: 25, openTickets: 10, ownerCsm: 'Tom Becker',
+    interactionSummaries: [{ text: 'Spike in how-to tickets around the new UI.' }],
+  }, // yellow (support volume only)
   {
-    id: 'blueyonder', name: 'Blue Yonder Airlines', segment: 'enterprise', arr: 260_000,
+    id: 'blueyonder', name: 'Blue Yonder Airlines', segment: 'enterprise', arr: 260_000, priorArr: 300_000,
     renewalInDays: 75, seats: 110, active: 70, usage: [90, 85, 82, 70],
-    championLastContactDays: 50, openTickets: 6,
-    interactionSummaries: ['Champion travel-heavy; hard to reach lately.'],
-  }, // expected: yellow (champion silence; 17.6% usage dip is below the 20% decline bar)
+    championLastContactDays: 50, openTickets: 6, ownerCsm: 'Devin Park', lastTouchDays: 52,
+    interactionSummaries: [{ text: 'Champion travel-heavy; hard to reach lately.' }],
+  }, // yellow (champion silence; 17.6% usage dip below the 20% bar)
   {
     id: 'fabrikamresidences', name: 'Fabrikam Residences', segment: 'smb', arr: 16_000,
     renewalInDays: 120, seats: 15, active: 4, usage: [5, 4, 4, 4],
-    championLastContactDays: 30, openTickets: 1,
-    interactionSummaries: ['Rollout stalled at a single team.'],
-  }, // expected: yellow (adoption gap only)
+    championLastContactDays: 30, openTickets: 1, ownerCsm: 'Tom Becker',
+    interactionSummaries: [{ text: 'Rollout stalled at a single team.' }],
+  }, // yellow (adoption gap only)
 
-  // ---- Stacked reds ----
+  // ---- NEW hard-signal yellows ----
+  {
+    id: 'cadencedrop', name: 'Sterling Freight', segment: 'mid_market', arr: 88_000,
+    renewalInDays: 160, seats: 60, active: 45, usage: [44, 45, 45, 45],
+    championLastContactDays: 20, openTickets: 2, ownerCsm: 'Maya Chen',
+    cadence: { priorTouchpoints: 4, recentTouchpoints: 1 },
+    interactionSummaries: [{ text: 'Used to meet biweekly; scheduling has slipped.', kind: 'email' }],
+  }, // yellow (engagement_cadence only)
+  {
+    id: 'slowreplies', name: 'Tavern Supply Co', segment: 'mid_market', arr: 64_000,
+    renewalInDays: 165, seats: 50, active: 35, usage: [34, 35, 35, 35],
+    championLastContactDays: 28, openTickets: 2, ownerCsm: 'Devin Park',
+    responsiveness: [
+      { asOf: daysAgo(50), medianReplyHours: 20, replyRatePct: 85 },
+      { asOf: daysAgo(8), medianReplyHours: 120, replyRatePct: 25 },
+    ],
+    interactionSummaries: [{ text: 'Emails increasingly going unanswered.', kind: 'email' }],
+  }, // yellow (email_responsiveness only)
+  {
+    id: 'stickydrop', name: 'Ridgeline Retail', segment: 'mid_market', arr: 70_000,
+    renewalInDays: 155, seats: 60, active: 50, usage: [50, 50, 50, 50], logins: [400, 400, 260, 150],
+    championLastContactDays: 21, openTickets: 2, ownerCsm: 'Tom Becker',
+    interactionSummaries: [{ text: 'Same license count, but people are logging in far less often.', kind: 'meeting' }],
+  }, // yellow (stickiness_decline only)
+  {
+    id: 'onboardstall', name: 'Newframe Studios', segment: 'smb', arr: 21_000,
+    renewalInDays: 300, seats: 25, active: 4, usage: [], activatedDaysAgo: null, createdDaysAgo: 60,
+    championLastContactDays: 35, openTickets: 1, ownerCsm: 'Rosa Alvarez', lifecycleState: 'new',
+    interactionSummaries: [{ text: 'Kickoff done 8 weeks ago but the team never went live.' }],
+  }, // yellow (onboarding_stalled only)
+
+  // ---- NEW red: billing critical ----
+  {
+    id: 'billinghold', name: 'Cascade Logistics', segment: 'mid_market', arr: 130_000,
+    renewalInDays: 110, seats: 80, active: 62, usage: [61, 62, 62, 62],
+    championLastContactDays: 24, openTickets: 3, ownerCsm: 'Rosa Alvarez', lifecycleState: 'at_risk',
+    billing: { overdueInvoice: true, disputedInvoice: true },
+    interactionSummaries: [{ text: 'Finance is disputing the last invoice and payment is overdue.' }],
+  }, // red (billing_friction critical)
+
+  // ---- NEW: soft + hard stack (hard-only = yellow; with soft competitor = red) ----
+  {
+    id: 'featuredrop', name: 'Data Insights Co', segment: 'mid_market', arr: 98_000,
+    renewalInDays: 150, seats: 70, active: 55, usage: [54, 55, 55, 55],
+    championLastContactDays: 26, openTickets: 2, ownerCsm: 'Maya Chen',
+    features: [
+      { label: 'Advanced Analytics', isKeyFeature: true, prior: 42, recent: 0 },
+      { label: 'Dashboards', isKeyFeature: false, prior: 30, recent: 28 },
+    ],
+    interactionSummaries: [{ text: 'They mentioned they are evaluating a competitor, Rival Analytics, for reporting.', kind: 'call' }],
+  }, // hard-only: yellow (feature_depth). With soft competitor_mention → red (pipeline test).
+
+  // ---- Stacked reds (hard) ----
   {
     id: 'contosopharma', name: 'Contoso Pharma', segment: 'enterprise', arr: 250_000,
-    renewalInDays: 200, seats: 100, active: 62, usage: [95, 90, 80, 62],
-    championLastContactDays: 15, openTickets: 3,
-    interactionSummaries: ['Sharp usage drop after a key team switched tools.', 'Escalation raised with the exec sponsor.'],
-  }, // expected: red (usage decline, critical)
+    renewalInDays: 200, seats: 100, active: 62, usage: [95, 90, 80, 62], lifecycleState: 'at_risk',
+    championLastContactDays: 15, openTickets: 3, ownerCsm: 'Maya Chen',
+    interactionSummaries: [{ text: 'Sharp usage drop after a key team switched tools.' }, { text: 'The exec sponsor has stopped joining our calls and was dismissive on the last one.', kind: 'call' }],
+  }, // red (usage decline critical)
   {
-    id: 'graphicdesign', name: 'Graphic Design Institute', segment: 'mid_market', arr: 84_000,
-    renewalInDays: 140, seats: 60, active: 24, usage: [26, 25, 24, 24],
-    championLastContactDays: 70, openTickets: 3,
-    interactionSummaries: ['Low adoption and champion has gone dark.'],
-  }, // expected: red (adoption + champion silence = 2 warnings)
+    id: 'graphicdesign', name: 'Graphic Design Institute', segment: 'mid_market', arr: 84_000, priorArr: 100_000,
+    renewalInDays: 140, seats: 60, active: 24, usage: [26, 25, 24, 24], lifecycleState: 'at_risk',
+    championLastContactDays: 70, openTickets: 3, ownerCsm: 'Maya Chen', lastTouchDays: 70,
+    interactionSummaries: [{ text: 'Low adoption and champion has gone dark.' }],
+  }, // red (adoption + champion silence = 2 warnings)
   {
     id: 'vanarsdel', name: 'VanArsdel Ltd', segment: 'enterprise', arr: 200_000,
-    renewalInDays: 30, seats: 100, active: 40, usage: [41, 40, 40, 40],
-    championLastContactDays: 20, openTickets: 4,
-    interactionSummaries: ['Renewal a month out with weak adoption — needs a save plan.'],
-  }, // expected: red (renewal proximity amplifies adoption gap)
+    renewalInDays: 30, seats: 100, active: 40, usage: [41, 40, 40, 40], lifecycleState: 'at_risk',
+    championLastContactDays: 20, openTickets: 4, ownerCsm: 'Maya Chen',
+    interactionSummaries: [{ text: 'Renewal a month out with weak adoption — needs a save plan.' }],
+  }, // red (imminent renewal amplifies adoption gap → critical)
   {
     id: 'alpineski', name: 'Alpine Ski House', segment: 'mid_market', arr: 110_000,
-    renewalInDays: 180, seats: 70, active: 50, usage: [49, 49, 50, 50],
-    championLastContactDays: 18, openTickets: 5, criticalTickets: 2,
-    interactionSummaries: ['Two sev-1 outages this month; trust is shaken.'],
-  }, // expected: red (critical support tickets)
+    renewalInDays: 180, seats: 70, active: 50, usage: [49, 49, 50, 50], lifecycleState: 'at_risk',
+    championLastContactDays: 18, openTickets: 5, criticalTickets: 2, ownerCsm: 'Rosa Alvarez',
+    interactionSummaries: [{ text: 'Customer is furious about two sev-1 outages and threatening to escalate to their exec.', kind: 'support' }],
+  }, // red (critical support tickets)
   {
     id: 'bestforyou', name: 'Best For You Organics', segment: 'enterprise', arr: 220_000,
-    renewalInDays: 90, seats: 120, active: 55, usage: [92, 85, 70, 55],
-    championLastContactDays: 80, openTickets: 4,
-    interactionSummaries: ['Everything trending the wrong way — usage, adoption, engagement.', 'Champion unreachable for weeks.'],
-  }, // expected: red (usage decline + adoption + champion silence)
+    renewalInDays: 90, seats: 120, active: 55, usage: [92, 85, 70, 55], lifecycleState: 'at_risk',
+    championLastContactDays: 80, openTickets: 4, ownerCsm: 'Maya Chen', lastTouchDays: 80,
+    interactionSummaries: [{ text: 'Everything trending the wrong way; champion unreachable for weeks and frustrated with results.' }],
+  }, // red (usage decline + adoption + champion silence)
+
+  // ---- Renewal-amplified: now YELLOW under jeopardy tiers (far, low-ARR, single driver) ----
   {
-    id: 'relecloud', name: 'Relecloud', segment: 'mid_market', arr: 90_000,
+    id: 'relecloud', name: 'Relecloud', segment: 'mid_market', arr: 90_000, priorArr: 110_000,
     renewalInDays: 45, seats: 50, active: 32, usage: [31, 31, 32, 32],
-    championLastContactDays: 65, openTickets: 2,
-    interactionSummaries: ['Renewal near and the champion has gone silent.'],
-  }, // expected: red (renewal proximity amplifies champion silence)
+    championLastContactDays: 65, openTickets: 2, ownerCsm: 'Devin Park', lastTouchDays: 66,
+    interactionSummaries: [{ text: 'Renewal near and the champion has gone silent.' }],
+  }, // yellow (champion silence + low-jeopardy renewal warning; was red pre-Phase-3)
   {
     id: 'margiestravel', name: "Margie's Travel", segment: 'smb', arr: 28_000,
     renewalInDays: 40, seats: 30, active: 10, usage: [11, 10, 10, 10],
-    championLastContactDays: 20, openTickets: 2,
-    interactionSummaries: ['Small deployment, renewal looming, adoption thin.'],
-  }, // expected: red (renewal proximity amplifies adoption gap)
+    championLastContactDays: 20, openTickets: 2, ownerCsm: 'Tom Becker',
+    interactionSummaries: [{ text: 'Small deployment, renewal looming, adoption thin.' }],
+  }, // yellow (adoption gap + low-jeopardy renewal warning; was red pre-Phase-3)
 
   // ---- Cold-start: thin data must never read red ----
   {
     id: 'treyresearch', name: 'Trey Research', segment: 'smb', arr: 18_000,
-    renewalInDays: 350, seats: 40, active: 6, usage: [6],
-    championLastContactDays: null, createdDaysAgo: 15, openTickets: 0,
+    renewalInDays: 350, seats: 40, active: 6, usage: [6], activatedDaysAgo: null,
+    championLastContactDays: null, createdDaysAgo: 15, openTickets: 0, ownerCsm: 'Tom Becker', lifecycleState: 'new',
     interactionSummaries: [],
-  }, // expected: green (15 days old, one snapshot — every data-dependent signal abstains)
+  }, // green (cold-start)
   {
     id: 'lucerne', name: 'Lucerne Publishing', segment: 'mid_market', arr: 54_000,
-    renewalInDays: 340, seats: 60, active: 12, usage: [],
-    championLastContactDays: 18, createdDaysAgo: 20, openTickets: 1,
-    interactionSummaries: ['Kickoff call held; rollout just beginning.'],
-  }, // expected: green (20 days old, no usage history yet — cold-start guard holds)
+    renewalInDays: 340, seats: 60, active: 12, usage: [], activatedDaysAgo: null,
+    championLastContactDays: 18, createdDaysAgo: 20, openTickets: 1, ownerCsm: 'Rosa Alvarez', lifecycleState: 'new',
+    interactionSummaries: [{ text: 'Kickoff call held; rollout just beginning.' }],
+  }, // green (cold-start)
 ];
 
 export const MOCK_ACCOUNTS: Account[] = SPECS.map(build);

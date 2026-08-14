@@ -43,6 +43,14 @@ export function makeAccount(overrides: Partial<Account> = {}): Account {
     openTickets: 2,
     criticalTickets: 0,
     createdAt: daysAgo(500), // established, not cold-start
+    // Phase 3 fields — healthy/neutral defaults so no new signal fires by default.
+    responsiveness: [],
+    featureUsage: [],
+    activatedAt: daysAgo(480),
+    billingFlags: { overdueInvoice: false, disputedInvoice: false, pricingPushback: false },
+    ownerCsm: 'Test CSM',
+    priorArr: 100_000,
+    lifecycleState: 'active',
   };
   return { ...base, ...overrides };
 }

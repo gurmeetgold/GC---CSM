@@ -1,4 +1,11 @@
-import type { Account, Contact, Interaction, Segment, UsageSnapshot } from '../../domain';
+import type {
+  Account,
+  Contact,
+  Interaction,
+  LifecycleState,
+  Segment,
+  UsageSnapshot,
+} from '../../domain';
 import {
   getBoolField,
   getNumberField,
@@ -31,7 +38,22 @@ const KEYS = {
   isChampion: ['is_champion', 'Is_Champion__c', 'champion', 'Champion__c'],
   criticalOpenTickets: ['critical_tickets', 'Critical_Tickets__c'],
   openTickets: ['open_tickets', 'Open_Tickets__c'],
+  // Phase 3 fields
+  activatedAt: ['activated_at', 'Activated_At__c', 'activation_date', 'Activation_Date__c'],
+  overdueInvoice: ['overdue_invoice', 'Overdue_Invoice__c', 'past_due'],
+  disputedInvoice: ['disputed_invoice', 'Disputed_Invoice__c', 'invoice_dispute'],
+  pricingPushback: ['pricing_pushback', 'Pricing_Pushback__c'],
+  ownerCsm: ['owner_csm', 'CSM__c', 'csm', 'account_owner', 'Owner_Name__c'],
+  priorArr: ['prior_arr', 'Prior_ARR__c', 'arr_last_year', 'Prior_Year_ARR__c'],
+  lifecycleState: ['lifecycle_state', 'Lifecycle_Stage__c', 'customer_stage'],
 } as const;
+
+const LIFECYCLE_STATES: LifecycleState[] = ['new', 'active', 'expanding', 'at_risk', 'churned'];
+
+function mapLifecycle(raw: string): LifecycleState {
+  const v = raw.toLowerCase().replace(/[\s-]+/g, '_');
+  return (LIFECYCLE_STATES as string[]).includes(v) ? (v as LifecycleState) : 'active';
+}
 
 /** Derive segment from an explicit custom field, else from employee count. */
 export function mapSegment(account: MergeAccount): Segment {
@@ -150,11 +172,14 @@ export function assembleAccount(bundle: AccountBundle, now: Date): Account {
     .map(mapInteractionFromCall)
     .sort((a, b) => Date.parse(b.occurredAt || '0') - Date.parse(a.occurredAt || '0'));
 
+  const arr = mapArr(account, opportunities);
+  const activatedRaw = getStringField(cf, [...KEYS.activatedAt], '');
+  const lifecycleRaw = getStringField(cf, [...KEYS.lifecycleState], '');
   return {
     id: account.id,
     name: account.name ?? 'Unnamed account',
     segment: mapSegment(account),
-    arr: mapArr(account, opportunities),
+    arr,
     renewalDate: mapRenewalDate(account, opportunities, now),
     licensedSeats: getNumberField(cf, [...KEYS.licensedSeats], 0),
     activeUsers: getNumberField(cf, [...KEYS.activeUsers], 0),
@@ -164,5 +189,18 @@ export function assembleAccount(bundle: AccountBundle, now: Date): Account {
     openTickets,
     criticalTickets,
     createdAt: account.remote_created_at ?? account.created_at ?? '',
+    // Phase 3 fields — mapped from custom fields where present, empty-safe otherwise,
+    // so the normalized shape matches the mock exactly.
+    responsiveness: [], // computed from email metadata in a later pass; empty for now
+    featureUsage: [], // computed from a product-analytics source later; empty for now
+    activatedAt: activatedRaw || null,
+    billingFlags: {
+      overdueInvoice: getBoolField(cf, [...KEYS.overdueInvoice], false),
+      disputedInvoice: getBoolField(cf, [...KEYS.disputedInvoice], false),
+      pricingPushback: getBoolField(cf, [...KEYS.pricingPushback], false),
+    },
+    ownerCsm: getStringField(cf, [...KEYS.ownerCsm], ''),
+    priorArr: getNumberField(cf, [...KEYS.priorArr], arr),
+    lifecycleState: lifecycleRaw ? mapLifecycle(lifecycleRaw) : 'active',
   };
 }

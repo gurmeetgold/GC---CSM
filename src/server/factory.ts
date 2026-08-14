@@ -4,6 +4,8 @@ import { createAnswerEngine, type AnswerEngine } from '../answer';
 import { HttpClaudeClient } from '../answer/claude/claudeClient';
 import { ClaudeSoftSignalExtractor, type SoftSignalExtractor } from '../answer/claude/softSignals';
 import { ClaudeReasoningWriter, type ReasoningWriter } from '../answer/claude/reasoning';
+import { MockSoftSignalExtractor } from '../answer/mock/MockSoftSignalExtractor';
+import { MockReasoningWriter } from '../answer/mock/MockReasoningWriter';
 import type { ServerConfig } from './config';
 
 /**
@@ -43,16 +45,19 @@ export function buildAnswerEngine(cfg: ServerConfig): AnswerEngine {
   return createAnswerEngine('claude', { claude });
 }
 
-/** The soft-signal extractor + reasoning writer are only meaningful with Claude configured. */
+/**
+ * Soft-signal extractor + reasoning writer. Claude-backed when configured; otherwise
+ * the deterministic mock pair — so even the credential-free mock path shows soft
+ * signals and narrated reasoning. Never null: soft enrichment is always available.
+ */
 export function buildSoftSignalEnrichment(
   cfg: ServerConfig,
-): { extractor: SoftSignalExtractor; reasoner: ReasoningWriter } | null {
-  if (cfg.answerEngine !== 'claude' || !cfg.claude) return null;
-  const claude = new HttpClaudeClient({ apiKey: cfg.claude.apiKey, model: cfg.claude.model });
-  return {
-    extractor: new ClaudeSoftSignalExtractor(claude),
-    reasoner: new ClaudeReasoningWriter(claude),
-  };
+): { extractor: SoftSignalExtractor; reasoner: ReasoningWriter } {
+  if (cfg.answerEngine === 'claude' && cfg.claude) {
+    const claude = new HttpClaudeClient({ apiKey: cfg.claude.apiKey, model: cfg.claude.model });
+    return { extractor: new ClaudeSoftSignalExtractor(claude), reasoner: new ClaudeReasoningWriter(claude) };
+  }
+  return { extractor: new MockSoftSignalExtractor(), reasoner: new MockReasoningWriter() };
 }
 
 /** Strip anything token-shaped from log metadata as a belt-and-suspenders guard. */

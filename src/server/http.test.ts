@@ -36,7 +36,7 @@ describe('HTTP server (mock config)', () => {
     const res = await fetch(`${base}/api/accounts`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.accounts).toHaveLength(25);
+    expect(body.accounts).toHaveLength(31);
     expect(body.sourceName).toBe('mock');
     expect(typeof body.now).toBe('string');
   });

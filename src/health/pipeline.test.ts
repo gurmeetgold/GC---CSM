@@ -59,6 +59,9 @@ describe('health pipeline (end-to-end, fixture-backed live source)', () => {
       usageHistory: [{ asOf: '2026-04-15', activeUsers: 90 }, { asOf: '2026-05-15', activeUsers: 30 }],
       contacts: [{ id: 'c', name: 'C', title: 'VP', isChampion: true, lastContactedAt: '2026-05-01' }],
       interactions: [], openTickets: 0, criticalTickets: 0, createdAt: '2023-01-01',
+      responsiveness: [], featureUsage: [], activatedAt: '2023-02-01',
+      billingFlags: { overdueInvoice: false, disputedInvoice: false, pricingPushback: false },
+      ownerCsm: 'CSM', priorArr: 300000, lifecycleState: 'at_risk',
     };
     const src = new MockDataSource([redAccount]);
     const book = await buildBook(src);

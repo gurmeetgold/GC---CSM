@@ -55,3 +55,34 @@ describe('renewalRisk', () => {
     expect(s!.evidence.concurrentRiskCount).toBe(1);
   });
 });
+
+// --- Phase 3: jeopardy-tiered severity ---
+describe('renewalRisk severity tiers', () => {
+  const secondRisk: Signal = { type: 'champion_silence', polarity: 'risk', severity: 'warning', headline: '', detail: '', evidence: {} };
+
+  it('is only a WARNING for a far-off, low-ARR, single-risk renewal', () => {
+    const acct = makeAccount({ renewalDate: daysAhead(45), arr: 100_000 });
+    expect(renewalRisk(acct, [someRisk], T, NOW)!.severity).toBe('warning');
+  });
+
+  it('is CRITICAL when renewal is imminent (≤30 days)', () => {
+    const acct = makeAccount({ renewalDate: daysAhead(25), arr: 100_000 });
+    expect(renewalRisk(acct, [someRisk], T, NOW)!.severity).toBe('critical');
+  });
+
+  it('is CRITICAL for a high-ARR renewal even if far-off', () => {
+    const acct = makeAccount({ renewalDate: daysAhead(55), arr: 300_000 });
+    expect(renewalRisk(acct, [someRisk], T, NOW)!.severity).toBe('critical');
+  });
+
+  it('is CRITICAL when multiple other risks are stacking', () => {
+    const acct = makeAccount({ renewalDate: daysAhead(55), arr: 100_000 });
+    expect(renewalRisk(acct, [someRisk, secondRisk], T, NOW)!.severity).toBe('critical');
+  });
+
+  it('exposes a jeopardy score for sorting the leadership view', () => {
+    const near = renewalRisk(makeAccount({ renewalDate: daysAhead(5), arr: 300_000 }), [someRisk, secondRisk], T, NOW);
+    const far = renewalRisk(makeAccount({ renewalDate: daysAhead(58), arr: 50_000 }), [someRisk], T, NOW);
+    expect(Number(near!.evidence.jeopardyScore)).toBeGreaterThan(Number(far!.evidence.jeopardyScore));
+  });
+});

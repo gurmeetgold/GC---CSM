@@ -6,6 +6,12 @@ import { adoptionGap } from './signals/adoptionGap';
 import { championSilence } from './signals/championSilence';
 import { supportStrain } from './signals/supportStrain';
 import { growth } from './signals/growth';
+import { engagementCadence } from './signals/engagementCadence';
+import { emailResponsiveness } from './signals/emailResponsiveness';
+import { featureDepth } from './signals/featureDepth';
+import { stickinessDecline } from './signals/stickinessDecline';
+import { onboardingStalled } from './signals/onboardingStalled';
+import { billingFriction } from './signals/billingFriction';
 import { renewalRisk } from './signals/renewalRisk';
 
 /**
@@ -20,6 +26,12 @@ export const SIGNAL_REGISTRY: readonly SignalFn[] = [
   championSilence,
   supportStrain,
   growth,
+  engagementCadence,
+  emailResponsiveness,
+  featureDepth,
+  stickinessDecline,
+  onboardingStalled,
+  billingFriction,
 ];
 
 export interface Evaluation {
@@ -31,23 +43,34 @@ export interface Evaluation {
 }
 
 /**
- * Roll fired signals up to a single RiskLevel.
+ * Roll fired signals up to a single RiskLevel (Phase 3: renewal is an amplifier).
  *
- *   red    = any critical risk signal, OR ≥2 warning risk signals stacked.
- *            (renewal_risk is critical, so a renewal cliff with active risk → red.)
- *   yellow = exactly one warning risk signal.
+ * `renewal_risk` is treated as an AMPLIFIER, not a standalone driver, so it never
+ * inflates the driver count. Its own severity carries the jeopardy verdict.
+ *
+ *   red    = any non-renewal CRITICAL driver, OR ≥2 non-renewal WARNING drivers,
+ *            OR renewal_risk fired at CRITICAL severity (high-jeopardy renewal).
+ *   yellow = exactly one non-renewal warning driver (with at most a warning-tier,
+ *            i.e. low-jeopardy, renewal on top), OR a warning-tier renewal alone.
  *   green  = no risk signals.
  *
  * Opportunity signals never affect risk level.
+ *
+ * The effect: a single warning driver under a far-off, low-value renewal now reads
+ * yellow (previously red), while imminent / high-ARR / stacked renewals still red.
  */
 export function rollUp(signals: Signal[]): RiskLevel {
   const risks = signals.filter((s) => s.polarity === 'risk');
   if (risks.length === 0) return 'green';
 
-  const hasCritical = risks.some((s) => s.severity === 'critical');
-  const warningCount = risks.filter((s) => s.severity === 'warning').length;
+  const renewal = risks.find((s) => s.type === 'renewal_risk');
+  const drivers = risks.filter((s) => s.type !== 'renewal_risk');
 
-  if (hasCritical || warningCount >= 2) return 'red';
+  const hasCriticalDriver = drivers.some((s) => s.severity === 'critical');
+  const warningDrivers = drivers.filter((s) => s.severity === 'warning').length;
+  const renewalCritical = renewal?.severity === 'critical';
+
+  if (hasCriticalDriver || warningDrivers >= 2 || renewalCritical) return 'red';
   return 'yellow';
 }
 

@@ -8,6 +8,9 @@ function accountWith(interactions: Account['interactions']): Account {
     id: 'a', name: 'Acct', segment: 'mid_market', arr: 100000, renewalDate: '2026-12-01',
     licensedSeats: 100, activeUsers: 80, usageHistory: [], contacts: [], interactions,
     openTickets: 0, criticalTickets: 0, createdAt: '2024-01-01',
+    responsiveness: [], featureUsage: [], activatedAt: '2024-02-01',
+    billingFlags: { overdueInvoice: false, disputedInvoice: false, pricingPushback: false },
+    ownerCsm: 'CSM', priorArr: 100000, lifecycleState: 'active',
   };
 }
 
