@@ -13,6 +13,7 @@ function champ(lastContactedDays: number | null): Contact {
     title: 'VP',
     isChampion: true,
     lastContactedAt: lastContactedDays === null ? null : daysAgo(lastContactedDays),
+    engagement: 'medium',
   };
 }
 
@@ -63,7 +64,7 @@ describe('championSilence', () => {
 
   // --- abstention cases ---
   it('abstains when there is no champion', () => {
-    const nonChamp: Contact = { id: 'x', name: 'User', title: 'Analyst', isChampion: false, lastContactedAt: daysAgo(200) };
+    const nonChamp: Contact = { id: 'x', name: 'User', title: 'Analyst', isChampion: false, lastContactedAt: daysAgo(200), engagement: 'low' };
     expect(championSilence(makeAccount({ contacts: [nonChamp] }), T, NOW)).toBeNull();
   });
 

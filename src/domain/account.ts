@@ -11,6 +11,8 @@
 
 export type Segment = 'smb' | 'mid_market' | 'enterprise';
 
+export type EngagementLevel = 'low' | 'medium' | 'high';
+
 export interface Contact {
   id: string;
   name: string;
@@ -19,6 +21,50 @@ export interface Contact {
   isChampion: boolean;
   /** ISO date of last meaningful contact, or null if never contacted. */
   lastContactedAt: string | null;
+  /**
+   * Relationship engagement, derived from conversation intelligence (Gong) + email
+   * activity — NOT product usage. 'low' on a decision-maker is a real risk.
+   */
+  engagement: EngagementLevel;
+}
+
+/**
+ * A help-desk ticket (Zendesk / Jira Service Management / Intercom). Everything here
+ * is honestly sourceable from the ticketing integration — no engineering/incident
+ * tooling. Powers the Support & Technical Attention view and ties ticket strain to
+ * account risk.
+ */
+export type TicketSeverity = 'p1' | 'p2' | 'p3';
+export type SlaStatus = 'ok' | 'at_risk' | 'breached';
+export type TicketTone = 'neutral' | 'negative' | 'frustrated';
+
+export interface SupportTicket {
+  id: string;
+  subject: string;
+  severity: TicketSeverity;
+  openedAt: string; // ISO date
+  /** true once resolved; open tickets drive attention. */
+  resolved: boolean;
+  /** SLA posture from the help desk. */
+  slaStatus: SlaStatus;
+  /** Tone read from the ticket wording (help-desk text) — feeds support sentiment. */
+  tone: TicketTone;
+}
+
+/**
+ * A CRM opportunity (Salesforce / HubSpot). The ONLY honest source of an expansion
+ * dollar amount — we never model a valuation from product usage we don't have.
+ */
+export type OpportunityStage =
+  | 'identified' | 'qualified' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost';
+
+export interface CrmOpportunity {
+  id: string;
+  name: string;
+  amount: number;
+  stage: OpportunityStage;
+  /** true when this is an expansion/upsell opp (vs. the original new-business deal). */
+  isExpansion: boolean;
 }
 
 export type InteractionKind = 'call' | 'email' | 'meeting' | 'support';
@@ -114,4 +160,18 @@ export interface Account {
   priorArr: number;
   /** Coarse commercial state — powers NRR/GRR and churn-reason inference. */
   lifecycleState: LifecycleState;
+
+  // ---- Phase 4 additions (help desk / CRM / Gong; both sources emit them) ----
+
+  /** Help-desk tickets (open + recently resolved). Powers the Support view. */
+  tickets: SupportTicket[];
+  /** CRM opportunities — the honest source of expansion dollar amounts. */
+  opportunities: CrmOpportunity[];
+  /**
+   * A short trailing health/engagement trend for row + tile sparklines, oldest →
+   * newest (0–100). MODELED for the demo; empty for cold-start / thin-data accounts
+   * (which therefore render no sparkline — honesty over decoration). In production
+   * this series accrues as SignalOS runs; it is never a warehouse-grade usage figure.
+   */
+  trendSeries: number[];
 }

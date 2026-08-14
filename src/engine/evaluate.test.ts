@@ -89,7 +89,7 @@ describe('evaluate (integration of registry + roll-up)', () => {
       interactions: [],
       activeUsers: 3,
       licensedSeats: 50,
-      contacts: [{ id: 'c', name: 'C', title: 'VP', isChampion: true, lastContactedAt: null }],
+      contacts: [{ id: 'c', name: 'C', title: 'VP', isChampion: true, lastContactedAt: null, engagement: 'low' }],
     });
     const e = evaluate(cold, T, NOW);
     expect(e.riskLevel).not.toBe('red');

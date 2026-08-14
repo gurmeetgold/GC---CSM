@@ -2,11 +2,17 @@ import type {
   Account,
   BillingFlags,
   Contact,
+  CrmOpportunity,
+  EngagementLevel,
   FeatureUsage,
   Interaction,
   LifecycleState,
   ResponsivenessSnapshot,
   Segment,
+  SupportTicket,
+  TicketSeverity,
+  TicketTone,
+  SlaStatus,
   UsageSnapshot,
 } from '../../domain';
 import { daysAgo, daysAhead } from './referenceTime';
@@ -67,6 +73,15 @@ interface Spec {
   lifecycleState?: LifecycleState;
   /** Recency of general CSM activity (interactions + secondary contact). Default 7. */
   lastTouchDays?: number;
+  // Phase 4 inputs
+  /** Explicit ticket detail (help desk). If omitted, generic tickets match the counts. */
+  ticketDetail?: { subject: string; severity: TicketSeverity; slaStatus: SlaStatus; tone: TicketTone; ageDays: number }[];
+  /** A real CRM expansion opportunity amount, when one exists. */
+  expansionOppArr?: number;
+  /** Champion engagement override (else derived from contact recency). */
+  championEngagement?: EngagementLevel;
+  /** Force an empty trend series (cold-start / thin data → no sparkline). Default: derived. */
+  noTrend?: boolean;
 }
 
 function usageFrom(spec: Spec): UsageSnapshot[] {
@@ -77,6 +92,14 @@ function usageFrom(spec: Spec): UsageSnapshot[] {
     if (spec.logins && typeof spec.logins[i] === 'number') snap.logins = spec.logins[i];
     return snap;
   });
+}
+
+/** Derive engagement from contact recency (Gong/email proxy): recent = high, stale = low. */
+function engagementFromDays(days: number | null): EngagementLevel {
+  if (days === null) return 'low';
+  if (days <= 20) return 'high';
+  if (days <= 45) return 'medium';
+  return 'low';
 }
 
 function contactsFrom(spec: Spec): Contact[] {
@@ -90,6 +113,7 @@ function contactsFrom(spec: Spec): Contact[] {
           isChampion: true,
           lastContactedAt:
             spec.championLastContactDays === null ? null : daysAgo(spec.championLastContactDays ?? 15),
+          engagement: spec.championEngagement ?? engagementFromDays(spec.championLastContactDays ?? 15),
         },
       ]
     : [];
@@ -99,8 +123,80 @@ function contactsFrom(spec: Spec): Contact[] {
     title: 'Program Manager',
     isChampion: false,
     lastContactedAt: daysAgo(spec.lastTouchDays ?? 7),
+    engagement: engagementFromDays(spec.lastTouchDays ?? 7),
   };
   return [...champion, secondary];
+}
+
+const TICKET_SUBJECTS = [
+  'Login issue for a user', 'Question about reporting export', 'Permission change request',
+  'SSO configuration help', 'Data import question', 'Billing question',
+];
+
+/** Generate help-desk tickets. Explicit detail when provided, else generic ones matching the counts. */
+function ticketsFrom(spec: Spec): SupportTicket[] {
+  if (spec.ticketDetail) {
+    return spec.ticketDetail.map((t, i) => ({
+      id: `${spec.id}-tkt-${i}`,
+      subject: t.subject,
+      severity: t.severity,
+      openedAt: daysAgo(t.ageDays),
+      resolved: false,
+      slaStatus: t.slaStatus,
+      tone: t.tone,
+    }));
+  }
+  const open = spec.openTickets ?? 1;
+  const critical = spec.criticalTickets ?? 0;
+  const out: SupportTicket[] = [];
+  for (let i = 0; i < open; i++) {
+    const isCrit = i < critical;
+    out.push({
+      id: `${spec.id}-tkt-${i}`,
+      subject: TICKET_SUBJECTS[i % TICKET_SUBJECTS.length]!,
+      severity: isCrit ? 'p1' : i % 3 === 0 ? 'p2' : 'p3',
+      openedAt: daysAgo(2 + (i % 9)),
+      resolved: false,
+      slaStatus: isCrit ? 'at_risk' : 'ok',
+      tone: 'neutral',
+    });
+  }
+  return out;
+}
+
+function opportunitiesFrom(spec: Spec): CrmOpportunity[] {
+  if (!spec.expansionOppArr) return [];
+  return [{
+    id: `${spec.id}-opp`,
+    name: `${spec.name} — Expansion`,
+    amount: spec.expansionOppArr,
+    stage: 'qualified',
+    isExpansion: true,
+  }];
+}
+
+/**
+ * A modeled 12-point trend series (0–100) for sparklines. Direction follows the
+ * account's trajectory. Empty for cold-start / thin-data accounts (no usage history
+ * or very new), which therefore render NO sparkline — honesty over decoration.
+ */
+function trendFrom(spec: Spec): number[] {
+  const created = spec.createdDaysAgo ?? 500;
+  const thin = spec.noTrend || (spec.usage?.length ?? 0) === 0 || created < 40;
+  if (thin) return [];
+  // Direction: reds decline, growth rises, else gently steady with small noise.
+  const first = spec.usage?.[0] ?? 60;
+  const last = spec.active ?? first;
+  const slope = last >= first ? 1 : -1;
+  const base = 62;
+  const amp = slope > 0 ? 1 : -1;
+  const pts: number[] = [];
+  for (let i = 0; i < 12; i++) {
+    const drift = amp * i * 2.2;
+    const noise = ((i * 37) % 7) - 3; // deterministic small wobble
+    pts.push(Math.max(8, Math.min(98, Math.round(base + drift + noise))));
+  }
+  return pts;
 }
 
 function interactionsFrom(spec: Spec): Interaction[] {
@@ -181,6 +277,9 @@ function build(spec: Spec, index: number): Account {
     ownerCsm: spec.ownerCsm ?? CSMS[index % CSMS.length]!,
     priorArr: spec.priorArr ?? spec.arr,
     lifecycleState: spec.lifecycleState ?? 'active',
+    tickets: ticketsFrom(spec),
+    opportunities: opportunitiesFrom(spec),
+    trendSeries: trendFrom(spec),
   };
 }
 
@@ -243,19 +342,19 @@ const SPECS: Spec[] = [
   {
     id: 'adventureworks', name: 'Adventure Works', segment: 'mid_market', arr: 120_000, priorArr: 95_000,
     renewalInDays: 200, seats: 100, active: 96, usage: [80, 85, 90, 96], lifecycleState: 'expanding',
-    championLastContactDays: 12, openTickets: 1, ownerCsm: 'Rosa Alvarez',
+    championLastContactDays: 12, openTickets: 1, ownerCsm: 'Rosa Alvarez', expansionOppArr: 30_000,
     interactionSummaries: [{ text: 'Usage climbing fast; asked about additional seats and pricing to expand.' }, { text: 'New team onboarded in the marketing org.' }],
   }, // green + growth
   {
     id: 'wingtip', name: 'Wingtip Toys', segment: 'enterprise', arr: 360_000, priorArr: 300_000,
     renewalInDays: 220, seats: 150, active: 150, usage: [120, 130, 140, 150], lifecycleState: 'expanding',
-    championLastContactDays: 8, openTickets: 2, ownerCsm: 'Rosa Alvarez',
+    championLastContactDays: 8, openTickets: 2, ownerCsm: 'Rosa Alvarez', expansionOppArr: 90_000,
     interactionSummaries: [{ text: 'At seat capacity — wants to expand, two new departments requesting access.' }],
   }, // green + growth (at limit)
   {
     id: 'coho', name: 'Coho Vineyard', segment: 'smb', arr: 26_000, priorArr: 20_000,
     renewalInDays: 100, seats: 25, active: 23, usage: [18, 20, 22, 23], lifecycleState: 'expanding',
-    championLastContactDays: 16, openTickets: 0, ownerCsm: 'Rosa Alvarez',
+    championLastContactDays: 16, openTickets: 0, ownerCsm: 'Rosa Alvarez', expansionOppArr: 7_000,
     interactionSummaries: [{ text: 'Power users pushing near the seat ceiling.' }],
   }, // green + growth
 
@@ -367,6 +466,13 @@ const SPECS: Spec[] = [
     renewalInDays: 180, seats: 70, active: 50, usage: [49, 49, 50, 50], lifecycleState: 'at_risk',
     championLastContactDays: 18, openTickets: 5, criticalTickets: 2, ownerCsm: 'Rosa Alvarez',
     interactionSummaries: [{ text: 'Customer is furious about two sev-1 outages and threatening to escalate to their exec.', kind: 'support' }],
+    ticketDetail: [
+      { subject: 'Repeated outages during business hours', severity: 'p1', slaStatus: 'breached', tone: 'frustrated', ageDays: 6 },
+      { subject: 'Data export failing for finance team', severity: 'p1', slaStatus: 'breached', tone: 'frustrated', ageDays: 4 },
+      { subject: 'SSO users intermittently logged out', severity: 'p2', slaStatus: 'at_risk', tone: 'negative', ageDays: 9 },
+      { subject: 'Report scheduling not working', severity: 'p2', slaStatus: 'at_risk', tone: 'negative', ageDays: 12 },
+      { subject: 'Permission mapping question', severity: 'p3', slaStatus: 'ok', tone: 'neutral', ageDays: 3 },
+    ],
   }, // red (critical support tickets)
   {
     id: 'bestforyou', name: 'Best For You Organics', segment: 'enterprise', arr: 220_000,

@@ -119,6 +119,8 @@ export function mapContact(c: MergeContact): Contact {
     title,
     isChampion: explicitChampion || titleSuggestsChampion,
     lastContactedAt: c.last_activity_at ?? null,
+    // Engagement is derived from Gong/email activity in a later pass; default medium.
+    engagement: 'medium',
   };
 }
 
@@ -202,5 +204,24 @@ export function assembleAccount(bundle: AccountBundle, now: Date): Account {
     ownerCsm: getStringField(cf, [...KEYS.ownerCsm], ''),
     priorArr: getNumberField(cf, [...KEYS.priorArr], arr),
     lifecycleState: lifecycleRaw ? mapLifecycle(lifecycleRaw) : 'active',
+    // Phase 4: tickets come from the help-desk client, opportunities from CRM; both
+    // are wired through the bundle in a follow-up. Empty-safe so shapes still match.
+    tickets: [],
+    opportunities: (opportunities ?? [])
+      .filter((o) => typeof o.amount === 'number')
+      .map((o) => ({
+        id: o.id,
+        name: o.name ?? 'Opportunity',
+        amount: o.amount ?? 0,
+        stage: mapOppStage(o.status),
+        isExpansion: /expansion|upsell|add-on|cross-sell/i.test(o.name ?? ''),
+      })),
+    trendSeries: [], // accrues as SignalOS runs; empty until then (no false sparkline)
   };
+}
+
+function mapOppStage(status: string | null): import('../../domain').OpportunityStage {
+  if (status === 'WON') return 'closed_won';
+  if (status === 'LOST') return 'closed_lost';
+  return 'qualified';
 }

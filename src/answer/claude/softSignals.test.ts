@@ -11,6 +11,7 @@ function accountWith(interactions: Account['interactions']): Account {
     responsiveness: [], featureUsage: [], activatedAt: '2024-02-01',
     billingFlags: { overdueInvoice: false, disputedInvoice: false, pricingPushback: false },
     ownerCsm: 'CSM', priorArr: 100000, lifecycleState: 'active',
+    tickets: [], opportunities: [], trendSeries: [],
   };
 }
 

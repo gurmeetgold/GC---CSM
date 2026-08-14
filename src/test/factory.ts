@@ -22,6 +22,7 @@ export function makeAccount(overrides: Partial<Account> = {}): Account {
     title: 'VP',
     isChampion: true,
     lastContactedAt: daysAgo(10),
+    engagement: 'high',
   };
   const usageHistory: UsageSnapshot[] = [
     { asOf: daysAgo(120), activeUsers: 70 },
@@ -51,6 +52,9 @@ export function makeAccount(overrides: Partial<Account> = {}): Account {
     ownerCsm: 'Test CSM',
     priorArr: 100_000,
     lifecycleState: 'active',
+    tickets: [],
+    opportunities: [],
+    trendSeries: [],
   };
   return { ...base, ...overrides };
 }

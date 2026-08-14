@@ -10,6 +10,7 @@ const account: Account = {
   responsiveness: [], featureUsage: [], activatedAt: '2023-02-01',
   billingFlags: { overdueInvoice: false, disputedInvoice: false, pricingPushback: false },
   ownerCsm: 'CSM', priorArr: 200000, lifecycleState: 'active',
+  tickets: [], opportunities: [], trendSeries: [],
 };
 
 const adoptionSignal: Signal = {

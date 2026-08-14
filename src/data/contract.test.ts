@@ -47,6 +47,10 @@ const ACCOUNT_SCHEMA: Record<keyof Account, Checker> = {
   priorArr: isNumber,
   lifecycleState: (v) =>
     v === 'new' || v === 'active' || v === 'expanding' || v === 'at_risk' || v === 'churned',
+  // Phase 4 fields — both sources must emit these identically.
+  tickets: (v) => Array.isArray(v),
+  opportunities: (v) => Array.isArray(v),
+  trendSeries: (v) => Array.isArray(v),
 };
 
 function assertAccountShape(a: Account, label: string): void {

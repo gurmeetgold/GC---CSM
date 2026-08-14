@@ -12,11 +12,12 @@ const healthy: Account = {
   licensedSeats: 100, activeUsers: 75, usageHistory: [
     { asOf: '2026-04-15', activeUsers: 74 }, { asOf: '2026-05-15', activeUsers: 75 },
   ],
-  contacts: [{ id: 'c', name: 'C', title: 'VP', isChampion: true, lastContactedAt: '2026-08-05' }],
+  contacts: [{ id: 'c', name: 'C', title: 'VP', isChampion: true, lastContactedAt: '2026-08-05', engagement: 'high' }],
   interactions: [], openTickets: 1, criticalTickets: 0, createdAt: '2023-01-01',
   responsiveness: [], featureUsage: [], activatedAt: '2023-02-01',
   billingFlags: { overdueInvoice: false, disputedInvoice: false, pricingPushback: false },
   ownerCsm: 'CSM', priorArr: 100000, lifecycleState: 'active',
+  tickets: [], opportunities: [], trendSeries: [],
 };
 
 function softWarning(): Signal {

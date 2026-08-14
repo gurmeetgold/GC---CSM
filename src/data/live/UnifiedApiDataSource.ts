@@ -130,5 +130,8 @@ function minimalAccount(id: string, name: string): Account {
     ownerCsm: '',
     priorArr: 0,
     lifecycleState: 'active',
+    tickets: [],
+    opportunities: [],
+    trendSeries: [],
   };
 }
