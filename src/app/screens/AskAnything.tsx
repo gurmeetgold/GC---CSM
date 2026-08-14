@@ -60,12 +60,12 @@ export function AskAnything({
           onChange={(ev) => setQuestion(ev.target.value)}
           placeholder="e.g. which accounts are at risk?"
           aria-label="Ask a question about your book"
-          className="flex-1 rounded-lg border border-line bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint focus-visible:border-risk-growth"
+          className="flex-1 rounded-lg border border-line bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint focus-visible:border-brand"
         />
         <button
           type="submit"
           disabled={pending || question.trim().length === 0}
-          className="rounded-lg bg-ink px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
           {pending ? 'Thinking…' : 'Ask'}
         </button>
@@ -85,7 +85,7 @@ export function AskAnything({
       </div>
 
       {result && (
-        <div className="mt-6 rounded-xl border border-line bg-surface p-5 shadow-sm">
+        <div className="mt-6 rounded-xl border border-line bg-surface p-5 shadow-card">
           <p className="text-[11px] uppercase tracking-wide text-ink-faint">
             Interpreted as: {result.interpretedAs}
           </p>

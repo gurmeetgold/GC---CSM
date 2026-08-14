@@ -123,4 +123,52 @@ describe('engine adversarial robustness', () => {
     expect(riskTypes.has('support_strain')).toBe(true);
     expect(riskTypes.has('renewal_risk')).toBe(true);
   });
+
+  // --- Phase 3 signal robustness ---
+  it('survives an account with all Phase 3 fields null/undefined', () => {
+    const broken = {
+      id: 'p3', name: 'P3', segment: 'smb', arr: 1000, renewalDate: NOW.toISOString(),
+      licensedSeats: 10, activeUsers: 5, usageHistory: null, contacts: [], interactions: null,
+      openTickets: 0, criticalTickets: 0, createdAt: '2024-01-01',
+      responsiveness: null, featureUsage: null, activatedAt: undefined, billingFlags: null,
+      ownerCsm: undefined, priorArr: null, lifecycleState: undefined,
+    } as unknown as Account;
+    expect(() => evaluate(broken, T, NOW)).not.toThrow();
+  });
+
+  it('fires all six new hard signals at once without throwing', () => {
+    const d = (n: number) => new Date(NOW.getTime() - n * 86_400_000).toISOString();
+    const everythingNew = {
+      id: 'new-all', name: 'New All', segment: 'mid_market', arr: 90_000, renewalDate: NOW.toISOString(),
+      licensedSeats: 60, activeUsers: 50,
+      // flat active users (no usage_decline) but stickiness collapses
+      usageHistory: [
+        { asOf: d(120), activeUsers: 50, logins: 500 },
+        { asOf: d(90), activeUsers: 50, logins: 500 },
+        { asOf: d(20), activeUsers: 50, logins: 100 },
+      ],
+      contacts: [{ id: 'c', name: 'C', title: 'VP', isChampion: true, lastContactedAt: d(10) }],
+      // cadence collapse: 4 prior call touchpoints, 0 recent
+      interactions: [
+        { id: 'a', occurredAt: d(70), kind: 'call', summary: '' },
+        { id: 'b', occurredAt: d(80), kind: 'call', summary: '' },
+        { id: 'c2', occurredAt: d(95), kind: 'call', summary: '' },
+        { id: 'd', occurredAt: d(105), kind: 'call', summary: '' },
+      ],
+      openTickets: 1, criticalTickets: 0, createdAt: d(100), // 100d old, not activated → onboarding stalled
+      responsiveness: [{ asOf: d(5), medianReplyHours: 200, replyRatePct: 10 }],
+      featureUsage: [{ key: 'k', label: 'Core', isKeyFeature: true, history: [{ asOf: d(90), uses: 40 }, { asOf: d(20), uses: 0 }] }],
+      activatedAt: null,
+      billingFlags: { overdueInvoice: true, disputedInvoice: true, pricingPushback: true },
+      ownerCsm: 'X', priorArr: 90_000, lifecycleState: 'at_risk',
+    } as unknown as Account;
+
+    let e!: ReturnType<typeof evaluate>;
+    expect(() => { e = evaluate(everythingNew, T, NOW); }).not.toThrow();
+    const fired = new Set(e.signals.map((s) => s.type));
+    for (const t of ['engagement_cadence', 'email_responsiveness', 'feature_depth', 'stickiness_decline', 'onboarding_stalled', 'billing_friction'] as const) {
+      expect(fired.has(t), `expected ${t} to fire`).toBe(true);
+    }
+    expect(e.riskLevel).toBe('red');
+  });
 });

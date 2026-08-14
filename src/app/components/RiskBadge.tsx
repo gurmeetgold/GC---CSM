@@ -3,9 +3,15 @@ import { RISK_STYLES } from '../format';
 
 /**
  * The single most important visual signal in the app. Health state is encoded
- * redundantly — color AND a text label AND a filled dot — so it never relies on
- * color alone (colorblind-safe) and reads instantly at a glance.
+ * THREE ways at once — color, a text label, and a distinct shape/glyph — so it
+ * survives colorblindness and a fast scan, and never relies on color alone.
+ *
+ *   red    ▲  (alert triangle — the loudest shape)
+ *   yellow ●  (filled dot — watch)
+ *   green  ✓  (check — healthy)
  */
+const GLYPH: Record<RiskLevel, string> = { red: '▲', yellow: '●', green: '✓' };
+
 export function RiskBadge({ level, size = 'md' }: { level: RiskLevel; size?: 'sm' | 'md' }) {
   const s = RISK_STYLES[level];
   const pad = size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-1 text-sm';
@@ -13,7 +19,9 @@ export function RiskBadge({ level, size = 'md' }: { level: RiskLevel; size?: 'sm
     <span
       className={`inline-flex items-center gap-1.5 rounded-full font-medium ring-1 ${s.bg} ${s.text} ${s.ring} ${pad}`}
     >
-      <span className={`h-2 w-2 rounded-full ${s.dot}`} aria-hidden="true" />
+      <span className={`text-[0.7em] leading-none ${level === 'yellow' ? '' : 'translate-y-[0.5px]'}`} aria-hidden="true">
+        {GLYPH[level]}
+      </span>
       {s.label}
     </span>
   );

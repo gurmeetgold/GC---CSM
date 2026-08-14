@@ -207,3 +207,74 @@ the book. HTTP clients retry 429/5xx with backoff (honoring `Retry-After`) and m
   and read red instead of the intended single-warning yellow. The test fixture was
   wrong, not the engine — fixed the fixture's usage history to match. Good reminder
   that the frozen engine does exactly what it says.
+
+---
+
+# Phase 3 Decisions — product depth + leadership + design
+
+## 19. Six new hard signals, all in the pure registry
+
+`engagement_cadence`, `email_responsiveness`, `feature_depth`, `stickiness_decline`,
+`onboarding_stalled`, `billing_friction` — each a pure `(account, thresholds, now) =>
+Signal | null` appended to `SIGNAL_REGISTRY`, thresholds-as-data, exhaustively tested
+(fires / silent / boundary), and cold-start-gated where it needs a baseline.
+`onboarding_stalled` is deliberately NOT cold-start-gated (it's about new accounts)
+but only fires *after* the activation window, so a brand-new account never trips it.
+Severities stay conservative (mostly `warning`; billing escalates to `critical` only
+when an invoice is both overdue AND disputed) so no single new signal solo-reds an
+account — they stack.
+
+## 20. `renewal_risk` v2 + `rollUp` v2 — the one approved change to the crown jewel
+
+Renewal severity is now **jeopardy-tiered** (critical when imminent / high-ARR /
+stacked, else warning) and `rollUp` treats renewal as an **amplifier**, not a
+stacking driver: red = a non-renewal critical, OR ≥2 non-renewal warnings, OR a
+critical-tier renewal. This makes a far-off, low-value, single-risk renewal read
+yellow rather than red — the product-correct behavior the owner approved. Every
+Phase 1 signal's own tests are unchanged; only the renewal roll-up moved, plus two
+mock accounts (`relecloud`, `margiestravel`) flipped red→yellow as designed.
+
+## 21. New normalized fields are REQUIRED, and BOTH sources emit them
+
+`responsiveness`, `featureUsage`, `activatedAt`, `billingFlags`, `ownerCsm`,
+`priorArr`, `lifecycleState`, and `UsageSnapshot.logins` were added as required
+domain fields (empty-safe defaults). The mock generator populates them richly; the
+live adapter maps each from custom fields / Gong / defaults. Making them required
+(not optional) keeps the anti-drift contract test strong — mock and live stay
+key-for-key identical. The three leadership-only fields (`ownerCsm`, `priorArr`,
+`lifecycleState`) are never read by the signal engine.
+
+## 22. Soft signals reach RiskLevel only through typed Signals — mock path included
+
+To render soft signals in the credential-free demo, `MockSoftSignalExtractor`
+(deterministic, keyword-over-interactions, evidence-grounded) mirrors the Claude
+extractor and feeds the same `combineEvaluation` roll-up. So the browser demo shows
+hard+soft stacking (e.g. `feature_depth` + `competitor_mention` → red) with no API
+key, and the guardrail holds: free-text never sets risk; only a typed `Signal` does,
+clamped to `warning`.
+
+## 23. Leadership is a separate pure module, not an engine change
+
+`src/leadership/metrics.ts` consumes `EvaluatedAccount[]` and computes NRR/GRR,
+distribution (counts + dollars), coverage, book balance, at-risk-without-activity,
+expansion, quarterly renewals, churn reasons (inferred from fired signals), and
+segment/CSM breakdowns — all pure, unit-tested, zero UI/vendor deps, and it never
+touches the engine. NRR/GRR come from `priorArr` vs `arr`; churn reasons come from
+the signals that actually fired, not a CRM picklist. "Health trend" and expansion
+sizing are modeled and labeled as such in the UI (the A4 transparency ethos).
+
+## 24. Team-visibility framing is coverage, not surveillance
+
+Every leadership team section is labeled around "where accounts need support" and
+"where to rebalance", never "who isn't working" — a deliberate product decision, in
+the UI copy, because our actual users are the CSMs and adoption dies if it reads as
+monitoring.
+
+## 25. Design identity: cool slate + one indigo accent; health & money are loudest
+
+See `DESIGN.md`. Tokens (palette, type scale, elevation, radius, motion) are defined
+once in `tailwind.config.js` and applied consistently. Health state is triple-encoded
+(color + shape + label) so it survives colorblindness; the health palette was picked
+by running the dataviz validator, not by eye. Money numbers use a hero type scale
+with tabular figures. Charts follow the dataviz method (honest marks, 2px gaps,
+labels/legends, no chartjunk).

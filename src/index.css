@@ -13,7 +13,17 @@
   }
   /* Visible, consistent keyboard focus everywhere. */
   :focus-visible {
-    @apply outline-none ring-2 ring-offset-2 ring-offset-surface ring-risk-growth;
+    @apply outline-none ring-2 ring-offset-2 ring-offset-surface ring-brand;
+  }
+  h1, h2, h3, h4 {
+    letter-spacing: -0.011em;
+  }
+}
+
+@layer utilities {
+  /* Money and metrics use tabular figures so columns align and numbers don't jitter. */
+  .nums {
+    font-variant-numeric: tabular-nums;
   }
 }
 

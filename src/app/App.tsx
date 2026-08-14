@@ -44,10 +44,10 @@ export default function App() {
         Skip to content
       </a>
 
-      <header className="border-b border-line bg-surface">
-        <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-ink text-xs font-bold text-white">
+      <header className="sticky top-0 z-30 border-b border-line bg-surface/85 backdrop-blur-md">
+        <div className="mx-auto max-w-6xl px-4 py-3.5 sm:px-6">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-[13px] font-bold text-white shadow-card">
               CS
             </div>
             <div>
@@ -56,7 +56,7 @@ export default function App() {
             </div>
           </div>
 
-          <nav className="mt-4 flex gap-1" aria-label="Primary">
+          <nav className="mt-3.5 flex gap-1" aria-label="Primary">
             {TABS.map((t) => {
               const active = tab === t.key;
               return (
@@ -68,8 +68,8 @@ export default function App() {
                     if (t.key !== 'red') setFocusId(null);
                   }}
                   aria-current={active ? 'page' : undefined}
-                  className={`relative rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                    active ? 'bg-surface-sunken text-ink' : 'text-ink-soft hover:text-ink'
+                  className={`relative rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-200 ease-calm ${
+                    active ? 'bg-brand-soft text-brand' : 'text-ink-soft hover:bg-surface-sunken hover:text-ink'
                   }`}
                 >
                   {t.label}

@@ -64,3 +64,37 @@ The thin backend that serves live data to the browser is implemented and tested:
 Nothing in `engine/` or `domain/` (beyond additive soft-signal types) changed, and
 the mock path runs exactly as in Phase 1. If a future phase forces an engine edit to
 onboard data, that's a seam leak to fix in the adapter — not the engine.
+
+---
+
+# Phase 3 — live-adapter follow-ups (mock renders everything today)
+
+Everything Phase 3 added renders from mock now. The live adapter emits the same new
+fields so the **contract test still proves mock and live are shape-identical** — but
+a few fields are currently empty-safe placeholders on the live side and need a real
+data source wired before the live path shows them with real values:
+
+| Field | Live source today | Phase-4 work |
+|---|---|---|
+| `responsiveness` | `[]` (placeholder) | compute median reply time + reply rate from email thread metadata (Gong/email API) |
+| `featureUsage` | `[]` (placeholder) | pull per-feature usage from a product-analytics source (Amplitude/Snowflake) |
+| `UsageSnapshot.logins` | absent | same product-analytics source (for stickiness) |
+| `activatedAt` | custom field or null | map the activation-milestone field, or derive from first-value event |
+| `billingFlags` | custom fields | map from the billing system (Stripe/NetSuite) or SFDC flags |
+| `ownerCsm` | custom field / account owner | map Salesforce Account Owner |
+| `priorArr` | custom field or `arr` | compute from the prior renewal's ARR (opportunity history) |
+| `lifecycleState` | custom field or `active` | map the customer-stage field |
+
+The hard signals that depend on the first three (`email_responsiveness`,
+`feature_depth`, `stickiness_decline`) will simply **abstain** on the live path until
+those sources are connected — never a false red — exactly as they abstain on a mock
+account that lacks the data. So the live path degrades gracefully the day it's turned
+on, and each source lights up its signal as it's connected.
+
+**Parity confirmed:** `src/data/contract.test.ts` asserts both `MockDataSource` and
+`UnifiedApiDataSource` emit the identical top-level key set and per-field types,
+including all eight Phase 3 fields. If a future change drifts one side, it fails.
+
+Leadership needs no new data source — every metric is derived from the normalized
+model + fired signals. `ownerCsm`/`priorArr`/`lifecycleState` are the only new inputs
+it relies on, all listed above.

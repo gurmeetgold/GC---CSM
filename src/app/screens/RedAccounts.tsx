@@ -37,7 +37,7 @@ function AccountCard({ e, highlight, narrative }: { e: EvaluatedAccount; highlig
       ref={ref}
       tabIndex={-1}
       id={`account-${e.account.id}`}
-      className={`scroll-mt-24 rounded-xl border bg-surface p-5 shadow-sm transition-shadow ${
+      className={`scroll-mt-24 rounded-xl border bg-surface p-5 shadow-card transition-shadow ${
         highlight ? 'border-risk-red ring-2 ring-risk-red/30' : 'border-line'
       }`}
     >
@@ -136,14 +136,19 @@ export function RedAccounts({
 
   return (
     <section aria-labelledby="red-heading">
-      <div className="mb-5">
-        <h2 id="red-heading" className="text-lg font-semibold text-ink">
-          At-risk accounts
-        </h2>
-        <p className="text-sm text-ink-soft">
-          {reds.length} account{reds.length === 1 ? '' : 's'} need attention ·{' '}
-          <span className="font-medium text-risk-red">{formatUsd(arrAtRisk)} ARR at risk</span>
-        </p>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2 id="red-heading" className="text-lg font-semibold text-ink">
+            At-risk accounts
+          </h2>
+          <p className="text-sm text-ink-soft">
+            {reds.length} account{reds.length === 1 ? '' : 's'} need attention today
+          </p>
+        </div>
+        <div className="text-right">
+          <div className="nums text-hero text-risk-red">{formatUsd(arrAtRisk)}</div>
+          <div className="text-xs font-medium uppercase tracking-wide text-ink-faint">ARR at risk</div>
+        </div>
       </div>
       <div className="grid gap-4">
         {reds.map((e) => (

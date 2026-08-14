@@ -70,5 +70,39 @@ segment) once we can measure typical time-to-close against renewal dates.
 
 ## Guardrail reminder
 
-None of the above is implemented. The Phase 1 engine tests still pass unchanged
-(67 signal-engine assertions), confirming thresholds and logic are untouched.
+The Phase 1 signal set's own tests still pass unchanged. The Phase 3 changes below
+were explicitly APPROVED before implementation.
+
+---
+
+# Phase 3 — approved and implemented
+
+These were proposed and **approved by the product owner** before wiring:
+
+### ✅ Two new soft-signal types (APPROVED)
+- **`sponsor_disengagement`** — the senior economic buyer has stopped attending /
+  gone quiet (attendance + language). Distinct from `champion_disengaging`.
+- **`support_sentiment`** — frustration in the *wording* of support tickets.
+  Distinct from the hard `support_strain` (which is volume/severity only).
+
+Both carry the Phase 2 guardrails: emitted only with specific evidence (a call /
+email / ticket, carried as the "why"), severity-clamped to `warning` (an LLM/soft
+signal can never solo-red an account), and absent when the source is unavailable.
+
+### ✅ `renewal_risk` v2 — jeopardy-tiered severity (APPROVED)
+Severity is now tiered instead of always-critical: **critical** when the renewal is
+imminent (≤30d), high-ARR (≥$250k), or ≥2 other risks stack; otherwise **warning**.
+`rollUp` treats renewal as an amplifier (not a stacking driver). Effect: far-off,
+low-ARR, single-risk renewals now read **yellow** instead of red (mock accounts
+`relecloud` and `margiestravel` flipped red→yellow). This is the one approved change
+to the frozen engine; it is covered by new tiered tests.
+
+### Still open for your call (unchanged from above)
+Item **#2** (whether a high-confidence competitor/displacement soft signal should
+ever be allowed to reach `critical` rather than the current `warning` clamp) remains
+a **proposal** — the clamp is in force until you decide.
+
+### New hard signals (in spec, not "proposals")
+The six new hard signals (engagement cadence, email responsiveness, feature depth,
+stickiness, onboarding stalled, billing friction) were part of the Phase 3 scope and
+are implemented with default thresholds (all overridable via `ThresholdConfig`).

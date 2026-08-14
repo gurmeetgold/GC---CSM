@@ -121,8 +121,33 @@ function Overview({ snap }: { snap: LeadershipSnapshot }) {
 
 function Renewals({ snap }: { snap: LeadershipSnapshot }) {
   if (snap.quarterlyRenewals.length === 0) return <Empty>No upcoming renewals in the book.</Empty>;
+  const maxArr = Math.max(1, ...snap.quarterlyRenewals.map((q) => q.renewingArr));
   return (
     <div className="space-y-6">
+      <Card title="Renewals by quarter" subtitle="Renewing ARR per quarter, with the at-risk portion in red — where the exposure is.">
+        <div className="space-y-3">
+          {snap.quarterlyRenewals.map((q) => {
+            const safe = q.renewingArr - q.arrAtRisk;
+            return (
+              <div key={q.quarter}>
+                <div className="mb-1 flex items-center justify-between text-sm">
+                  <span className="font-medium text-ink">{q.quarter}</span>
+                  <span className="nums text-xs text-ink-soft">
+                    {formatUsd(q.renewingArr)}{q.arrAtRisk > 0 && <span className="text-risk-red"> · {formatUsd(q.arrAtRisk)} at risk</span>}
+                  </span>
+                </div>
+                <div className="flex h-3 gap-0.5" style={{ width: `${(q.renewingArr / maxArr) * 100}%`, minWidth: '8%' }}>
+                  {q.arrAtRisk > 0 && (
+                    <div className="rounded-l-[3px] bg-risk-red" style={{ width: `${(q.arrAtRisk / q.renewingArr) * 100}%` }} title={`${formatUsd(q.arrAtRisk)} at risk`} />
+                  )}
+                  <div className={`bg-ink/25 ${q.arrAtRisk > 0 ? 'rounded-r-[3px]' : 'rounded-[3px]'}`} style={{ width: `${(safe / q.renewingArr) * 100}%` }} title={`${formatUsd(safe)} on track`} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
       {snap.quarterlyRenewals.map((q) => (
         <Card
           key={q.quarter}
@@ -207,6 +232,13 @@ function Reports({ snap }: { snap: LeadershipSnapshot }) {
       </Card>
 
       <Card title="Health distribution by CSM" subtitle="Where the team needs support — coverage, not surveillance.">
+        <div className="mb-3 flex gap-4 text-xs text-ink-soft">
+          {(['red', 'yellow', 'green'] as RiskLevel[]).map((lvl) => (
+            <span key={lvl} className="inline-flex items-center gap-1.5">
+              <span className={`h-2.5 w-2.5 rounded-full ${RISK_STYLES[lvl].dot}`} /> {RISK_STYLES[lvl].label}
+            </span>
+          ))}
+        </div>
         <div className="space-y-3">
           {snap.healthByCsm.map((c) => {
             const total = c.distribution.green.count + c.distribution.yellow.count + c.distribution.red.count;
@@ -214,12 +246,14 @@ function Reports({ snap }: { snap: LeadershipSnapshot }) {
               <div key={c.ownerCsm}>
                 <div className="mb-1 flex items-center justify-between text-sm">
                   <span className="font-medium text-ink">{c.ownerCsm}</span>
-                  <span className="text-xs text-ink-faint">{total} accounts</span>
+                  <span className="nums text-xs text-ink-faint">
+                    {c.distribution.red.count}·{c.distribution.yellow.count}·{c.distribution.green.count} of {total}
+                  </span>
                 </div>
-                <div className="flex h-2.5 overflow-hidden rounded-full">
+                <div className="flex h-2.5 gap-0.5">
                   {(['red', 'yellow', 'green'] as RiskLevel[]).map((lvl) =>
                     c.distribution[lvl].count > 0 ? (
-                      <div key={lvl} className={RISK_STYLES[lvl].dot} style={{ width: `${(c.distribution[lvl].count / total) * 100}%` }} title={`${c.distribution[lvl].count} ${lvl}`} />
+                      <div key={lvl} className={`${RISK_STYLES[lvl].dot} rounded-[2px]`} style={{ width: `${(c.distribution[lvl].count / total) * 100}%` }} title={`${c.distribution[lvl].count} ${RISK_STYLES[lvl].label}`} />
                     ) : null,
                   )}
                 </div>
@@ -237,17 +271,18 @@ function Reports({ snap }: { snap: LeadershipSnapshot }) {
 function HeroTile({ label, value, sub, tone, emphasize }: { label: string; value: string; sub: string; tone: 'good' | 'bad' | 'neutral'; emphasize?: boolean }) {
   const toneColor = tone === 'good' ? 'text-risk-green' : tone === 'bad' ? 'text-risk-red' : 'text-ink';
   return (
-    <div className={`rounded-xl border bg-surface p-5 shadow-sm ${emphasize ? 'border-risk-red/30' : 'border-line'}`}>
+    <div className={`relative overflow-hidden rounded-xl border bg-surface p-5 shadow-card ${emphasize ? 'border-risk-red/30 ring-1 ring-risk-red/10' : 'border-line'}`}>
+      {emphasize && <div className="absolute inset-x-0 top-0 h-1 bg-risk-red" aria-hidden="true" />}
       <div className="text-xs font-medium uppercase tracking-wide text-ink-faint">{label}</div>
-      <div className={`mt-1 text-3xl font-semibold tabular-nums ${emphasize ? 'text-risk-red' : toneColor}`}>{value}</div>
-      <div className="mt-1 text-xs text-ink-soft">{sub}</div>
+      <div className={`nums mt-1.5 ${emphasize ? 'text-hero text-risk-red' : `text-stat ${toneColor}`}`}>{value}</div>
+      <div className="mt-1.5 text-xs text-ink-soft">{sub}</div>
     </div>
   );
 }
 
 function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-line bg-surface p-5 shadow-sm">
+    <div className="rounded-xl border border-line bg-surface p-5 shadow-card">
       <h3 className="text-sm font-semibold text-ink">{title}</h3>
       {subtitle && <p className="mt-0.5 mb-3 text-xs text-ink-soft">{subtitle}</p>}
       {children}
@@ -264,10 +299,16 @@ function DistributionBar({ snap }: { snap: LeadershipSnapshot }) {
   const order: RiskLevel[] = ['red', 'yellow', 'green'];
   return (
     <div>
-      <div className="flex h-6 overflow-hidden rounded-lg">
+      <div className="flex h-7 gap-0.5">
         {order.map((lvl) =>
           snap.distribution[lvl].arr > 0 ? (
-            <div key={lvl} className={`${RISK_STYLES[lvl].dot} flex items-center justify-center`} style={{ width: `${(snap.distribution[lvl].arr / totalArr) * 100}%` }}>
+            <div
+              key={lvl}
+              className={`${RISK_STYLES[lvl].dot} flex items-center justify-center rounded-[3px] text-[11px] font-semibold text-white first:rounded-l-lg last:rounded-r-lg`}
+              style={{ width: `${(snap.distribution[lvl].arr / totalArr) * 100}%` }}
+              title={`${RISK_STYLES[lvl].label}: ${formatUsd(snap.distribution[lvl].arr)}`}
+            >
+              {(snap.distribution[lvl].arr / totalArr) > 0.1 ? formatUsd(snap.distribution[lvl].arr) : ''}
             </div>
           ) : null,
         )}
