@@ -3,15 +3,17 @@ import { useBook } from './useBook';
 import { HealthOverview } from './screens/HealthOverview';
 import { RedAccounts } from './screens/RedAccounts';
 import { AskAnything } from './screens/AskAnything';
+import { Leadership } from './screens/Leadership';
 import { createAnswerEngine } from '../answer';
 import { HttpAnswerEngine } from '../answer/http/HttpAnswerEngine';
 import { backendUrl } from './bookProvider';
 
-type Tab = 'overview' | 'red' | 'ask';
+type Tab = 'overview' | 'red' | 'leadership' | 'ask';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Health overview' },
   { key: 'red', label: 'At-risk accounts' },
+  { key: 'leadership', label: 'Leadership' },
   { key: 'ask', label: 'Ask anything' },
 ];
 
@@ -90,6 +92,7 @@ export default function App() {
           <>
             {tab === 'overview' && <HealthOverview book={book} now={now} onSelect={selectAccount} />}
             {tab === 'red' && <RedAccounts book={book} focusId={focusId} reasoning={reasoning} />}
+            {tab === 'leadership' && <Leadership book={book} now={now} />}
             {tab === 'ask' && <AskAnything book={book} onSelect={selectAccount} engine={answerEngine} />}
           </>
         )}

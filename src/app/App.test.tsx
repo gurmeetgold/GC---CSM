@@ -25,6 +25,16 @@ describe('App (smoke)', () => {
     });
   });
 
+  it('navigates to the leadership screen and shows the hero metrics', async () => {
+    render(<App />);
+    await waitFor(() => screen.getByText(/at risk ·/));
+    fireEvent.click(screen.getByRole('button', { name: /Leadership/ }));
+    await waitFor(() => {
+      expect(screen.getByText('Net Revenue Retention')).toBeInTheDocument();
+      expect(screen.getByText('ARR at risk')).toBeInTheDocument();
+    });
+  });
+
   it('navigates to the ask-anything screen and answers a question', async () => {
     render(<App />);
     await waitFor(() => screen.getByText(/at risk ·/));
