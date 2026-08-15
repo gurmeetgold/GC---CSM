@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
+import type { SourceConnection } from '../../data';
 import {
   IconHome, IconAccounts, IconRenewals, IconOpportunities, IconTech, IconPlaybook,
   IconAlert, IconExec, IconSettings, IconSearch, IconBell, IconCalendar, IconChevron,
@@ -40,12 +41,14 @@ export function AppShell({
   onNavigate,
   onAsk,
   snapshot,
+  connections = [],
   children,
 }: {
   route: Route;
   onNavigate: (r: Route) => void;
   onAsk: (q: string) => void;
   snapshot: Snapshot;
+  connections?: SourceConnection[];
   children: ReactNode;
 }) {
   const [q, setQ] = useState('');
@@ -106,6 +109,18 @@ export function AppShell({
               View all accounts →
             </button>
           </div>
+
+          {/* Data sources — honest connection status */}
+          {connections.length > 0 && (
+            <div className="mx-3 mb-3 rounded-xl border border-line bg-surface-sunken p-4">
+              <div className="text-xs font-semibold text-ink-soft">Data Sources</div>
+              <ul className="mt-2 space-y-1.5 text-xs">
+                {connections.map((c) => (
+                  <ConnRow key={c.name} conn={c} />
+                ))}
+              </ul>
+            </div>
+          )}
         </aside>
 
         {/* Main column */}
@@ -160,6 +175,25 @@ export function AppShell({
         </div>
       </div>
     </div>
+  );
+}
+
+const CONN_META: Record<SourceConnection['status'], { color: string; label: string }> = {
+  connected: { color: 'bg-risk-green', label: 'Connected' },
+  cold_start: { color: 'bg-risk-yellow', label: 'Cold start' },
+  not_connected: { color: 'bg-ink-faint/50', label: 'Not connected' },
+};
+
+function ConnRow({ conn }: { conn: SourceConnection }) {
+  const meta = CONN_META[conn.status];
+  return (
+    <li className="flex items-center justify-between gap-2">
+      <span className="flex min-w-0 items-center gap-2 text-ink-soft">
+        <span className={`h-2 w-2 shrink-0 rounded-full ${meta.color}`} />
+        <span className="truncate">{conn.name}</span>
+      </span>
+      <span className="shrink-0 text-ink-faint" title={conn.detail}>{meta.label}</span>
+    </li>
   );
 }
 

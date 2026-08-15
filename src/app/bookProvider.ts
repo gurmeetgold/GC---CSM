@@ -1,4 +1,4 @@
-import { createDataSource, resolveDataSourceKind } from '../data';
+import { createDataSource, resolveDataSourceKind, type SourceConnection } from '../data';
 import type { EvaluatedAccount } from '../answer';
 import { MockSoftSignalExtractor } from '../answer/mock/MockSoftSignalExtractor';
 import { MockReasoningWriter } from '../answer/mock/MockReasoningWriter';
@@ -23,6 +23,8 @@ export interface LoadedBook {
   sourceName: string;
   /** accountId → narrative reasoning (red accounts). Empty in local mock mode. */
   reasoning: Record<string, string>;
+  /** Per-source connection status for the UI's honest "connected / not connected" indicator. */
+  connections: SourceConnection[];
 }
 
 export interface BookProvider {
@@ -43,7 +45,7 @@ export class LocalBookProvider implements BookProvider {
     const written = await writeRedReasoning(book, new MockReasoningWriter());
     const reasoning: Record<string, string> = {};
     for (const r of written) reasoning[r.accountId] = r.reasoning;
-    return { book, now, sourceName: source.name, reasoning };
+    return { book, now, sourceName: source.name, reasoning, connections: source.connections() };
   }
 }
 
@@ -59,12 +61,14 @@ export class HttpBookProvider implements BookProvider {
       now: string;
       sourceName: string;
       reasoning?: Record<string, string>;
+      connections?: SourceConnection[];
     };
     return {
       book: data.accounts,
       now: new Date(data.now),
       sourceName: data.sourceName,
       reasoning: data.reasoning ?? {},
+      connections: data.connections ?? [],
     };
   }
 }

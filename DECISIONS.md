@@ -333,3 +333,26 @@ The left nav shows the full SignalOS item set. The six screens we build are clic
 (Home, Accounts, Renewals, Opportunities, Technical Health, Executive View); Playbooks,
 Alerts, and Settings are shown but **non-clickable (disabled)** so the shell matches the
 vision without pretending features exist. "Ask" is wired to the top-bar search.
+
+## 31. Phase 5 — first real integrations (Merge CRM + Ticketing); Slack deferred
+Wired the live path to **Merge unified API** for real CRM (backbone: accounts, ARR,
+renewals, owner→CSM, segment, contacts, opportunities) and **help-desk Ticketing** (a
+separately-connected Merge category). One Merge client, two adapters
+(`MergeCrmSource`, `MergeTicketingSource`) sharing the SAME pure mappers the composite
+`UnifiedApiDataSource` already used, so mock and live cannot diverge (contract + seam
+tests enforce it). **Slack was explicitly deferred by the owner** ("only email is
+fine") — documented in `SETUP_SLACK.md`, no Slack code paths added.
+
+## 32. SLA is derived, ticket tone is neutral (owner-approved honesty calls)
+Help desks don't emit a uniform SLA field or sentiment, so we **derive** `slaStatus`
+(`breached`/`at_risk`/`ok`) from due date + resolved state, and we set ticket `tone`
+to **`neutral`** always rather than fabricating sentiment from help-desk text. Both are
+documented in `DATA_HANDLING.md`. The signal engine is **untouched**: ticket *counts*
+still feed `support_strain`; the new ticket *objects* are UI/support detail only.
+
+## 33. Per-source connection status added to the DataSource seam
+Added `connections(): SourceConnection[]` to the `DataSource` interface
+(`connected` / `not_connected` / `cold_start`), threaded through the server payload,
+`BookProvider`, `useBook`, and a "Data Sources" panel in the app shell — so the UI can
+**honestly** show which integrations are live vs. cold-start vs. not connected, instead
+of implying everything is wired. Mock reports a single "Sample data: connected" source.

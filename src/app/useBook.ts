@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { EvaluatedAccount } from '../answer';
+import type { SourceConnection } from '../data';
 import { resolveBookProvider } from './bookProvider';
 
 interface BookState {
@@ -11,6 +12,8 @@ interface BookState {
   now: Date;
   /** accountId → narrative reasoning (populated by the backend in live mode). */
   reasoning: Record<string, string>;
+  /** Per-source connection status for the honest integration indicator. */
+  connections: SourceConnection[];
 }
 
 /**
@@ -26,6 +29,7 @@ export function useBook(): BookState {
     sourceName: '',
     now: new Date(),
     reasoning: {},
+    connections: [],
   });
 
   useEffect(() => {
@@ -34,9 +38,9 @@ export function useBook(): BookState {
     async function load() {
       try {
         const provider = resolveBookProvider();
-        const { book, now, sourceName, reasoning } = await provider.loadBook();
+        const { book, now, sourceName, reasoning, connections } = await provider.loadBook();
         if (!cancelled) {
-          setState({ loading: false, error: null, book, sourceName, now, reasoning });
+          setState({ loading: false, error: null, book, sourceName, now, reasoning, connections });
         }
       } catch (err) {
         if (!cancelled) {
@@ -47,6 +51,7 @@ export function useBook(): BookState {
             sourceName: '',
             now: new Date(),
             reasoning: {},
+            connections: [],
           });
         }
       }

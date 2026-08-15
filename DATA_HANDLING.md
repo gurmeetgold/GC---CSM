@@ -71,6 +71,38 @@ client secrets or refresh loops ourselves:
 
 Tokens are scoped by `orgId` + provider and can be individually deleted (disconnect).
 
+## Phase 5: Merge CRM + Ticketing data flow
+
+The live source assembles the **same normalized `Account`** the mock emits, from two
+Merge categories behind one linked account:
+
+- **CRM (backbone).** Accounts, ARR, renewal dates, segment, owner→CSM, contacts, and
+  opportunities. A CRM failure is fatal to the book (there's nothing to render).
+- **Ticketing (optional, separate connection).** Support tickets → domain
+  `SupportTicket`. Degrades to zero tickets independently if not connected.
+
+What crosses the adapter (and what does **not**):
+
+| Domain field | Derived from | Honesty note |
+|--------------|--------------|--------------|
+| `tickets[].slaStatus` | **Derived** from `due_date` vs. now + resolved state | We do **not** copy a vendor "SLA" field — help desks vary; we compute `breached` / `at_risk` / `ok` ourselves. |
+| `tickets[].severity` | Mapped from Merge `priority` (URGENT→p1, HIGH→p2, else p3) | Coarse, deterministic mapping. |
+| `tickets[].tone` | **Always `neutral`** | Help desks don't emit sentiment. We do not fabricate tone; the gap is documented, not guessed. |
+| `openTickets` / `criticalTickets` | Counted from mapped tickets (open; open+p1) | These remain the only ticket signal the engine consumes — the engine was **not** changed. |
+
+**No vendor field names leak past the adapter.** `custom_fields`, `remote_id`,
+`annual_revenue`, `due_date`, `crm_account_id`, `Licensed_Seats__c`, etc. exist only
+inside `src/data/live/` mappers. A seam test (`seam.test.ts`) serializes the live
+output and asserts none of these keys appear.
+
+**Token shape.** Merge uses one org-level `MERGE_ACCESS_KEY` plus a per-customer
+linked-account token (`MERGE_ACCOUNT_TOKEN`). The same linked account exposes both CRM
+and Ticketing categories — one connection, two adapters. Nothing about ticket contents
+is persisted; tickets are fetched, mapped, counted, and discarded per request.
+
+**Slack: deferred.** No Slack data is fetched, stored, or transmitted in this phase.
+See `SETUP_SLACK.md`.
+
 ## LLM data flow (soft signals + reasoning)
 
 - Only interaction **summaries** (bounded to the most recent 25) are sent to Claude,

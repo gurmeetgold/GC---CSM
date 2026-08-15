@@ -14,7 +14,7 @@ import { HttpAnswerEngine } from '../answer/http/HttpAnswerEngine';
 import { backendUrl } from './bookProvider';
 
 export default function App() {
-  const { loading, error, book, now, reasoning } = useBook();
+  const { loading, error, book, now, reasoning, connections } = useBook();
   const [route, setRoute] = useState<Route>('home');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [askSeed, setAskSeed] = useState('');
@@ -51,7 +51,7 @@ export default function App() {
   const selected = selectedId ? book.find((e) => e.account.id === selectedId) ?? null : null;
 
   return (
-    <AppShell route={route} onNavigate={navigate} onAsk={ask} snapshot={snapshot}>
+    <AppShell route={route} onNavigate={navigate} onAsk={ask} snapshot={snapshot} connections={connections}>
       {loading && <LoadingState />}
       {error && !loading && <ErrorState message={error} />}
       {!loading && !error && (

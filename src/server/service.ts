@@ -1,4 +1,5 @@
 import type { AnswerEngine, AnswerResult, EvaluatedAccount } from '../answer';
+import type { SourceConnection } from '../data';
 import { buildBook, writeRedReasoning } from '../health/pipeline';
 import { buildAnswerEngine, buildDataSource, buildSoftSignalEnrichment } from './factory';
 import type { ServerConfig } from './config';
@@ -19,6 +20,8 @@ export interface BookPayload {
   accounts: EvaluatedAccount[];
   /** accountId → Claude (or fallback) narrative, for red accounts only. */
   reasoning: Record<string, string>;
+  /** Per-source connection status (connected / not connected / cold-start) for the UI. */
+  connections: SourceConnection[];
 }
 
 export class BookService {
@@ -54,6 +57,7 @@ export class BookService {
       now: this.source.now().toISOString(),
       accounts: book,
       reasoning,
+      connections: this.source.connections(),
     };
     this.cache = { at: this.clock(), payload };
     return payload;

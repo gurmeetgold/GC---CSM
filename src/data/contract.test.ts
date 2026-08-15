@@ -93,12 +93,27 @@ describe('DataSource contract (anti-drift)', () => {
     expect(Object.keys(u!).sort()).toEqual(Object.keys(m!).sort());
   });
 
-  it('both sources expose the same DataSource surface (name, now, list, get)', () => {
+  it('both sources expose the same DataSource surface (name, now, list, get, connections)', () => {
     for (const src of [mock, unified]) {
       expect(typeof src.name).toBe('string');
       expect(src.now()).toBeInstanceOf(Date);
       expect(typeof src.listAccounts).toBe('function');
       expect(typeof src.getAccount).toBe('function');
+      expect(typeof src.connections).toBe('function');
+    }
+  });
+
+  it('both sources expose an identically-shaped connections() array', async () => {
+    await unified.listAccounts(); // populate live connection status
+    for (const [src, label] of [[mock, 'mock'], [unified, 'unified']] as const) {
+      const conns = src.connections();
+      expect(Array.isArray(conns), `${label}: connections is array`).toBe(true);
+      expect(conns.length, `${label}: at least one connection`).toBeGreaterThan(0);
+      for (const c of conns) {
+        expect(typeof c.name, `${label}: connection name`).toBe('string');
+        expect(['connected', 'not_connected', 'cold_start'], `${label}: status enum`).toContain(c.status);
+        expect(c.detail === undefined || typeof c.detail === 'string', `${label}: detail`).toBe(true);
+      }
     }
   });
 

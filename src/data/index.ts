@@ -3,7 +3,7 @@ import { MockDataSource } from './mock/MockDataSource';
 import { UnifiedApiDataSource, type UnifiedApiLogger } from './live/UnifiedApiDataSource';
 import type { GongClient, MergeClient } from './live/clients';
 
-export type { DataSource } from './DataSource';
+export type { DataSource, SourceConnection, ConnectionStatus } from './DataSource';
 export { MockDataSource } from './mock/MockDataSource';
 export { UnifiedApiDataSource } from './live/UnifiedApiDataSource';
 
