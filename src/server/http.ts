@@ -8,8 +8,9 @@ import { scopeBookForUser } from './bookScope';
 import { DEFAULT_ORG_ID } from './orgId';
 import { leadershipSnapshot } from '../leadership/metrics';
 import { AuthError } from '../auth/authService';
+import type { AdminServices } from './adminServices';
 import type { IntegrationKind } from '../admin/integrationsStore';
-import type { ThresholdOverride } from '../domain';
+import type { Invite, ThresholdOverride } from '../domain';
 
 /**
  * The thin backend host. Exposes the evaluated book, ask, and — as of Phase 7 —
@@ -103,15 +104,28 @@ export function createServer(cfg: ServerConfig, opts: HttpServerOptions = {}): E
     res.json({ hasAdmin: (await admin.users.count(ORG)) > 0 });
   });
 
+  // Public: lets the accept-invite screen show "you're invited to <org> as <role>"
+  // BEFORE asking for a password, and distinguishes expired / already-used / already-
+  // registered so the UI can show the right message instead of one generic error.
+  app.get('/api/auth/invite/:token', async (req: Request, res: Response) => {
+    const validation = await admin.auth.validateInviteToken(req.params.token ?? '');
+    if (!validation.ok) {
+      res.status(410).json({ valid: false, reason: validation.reason });
+      return;
+    }
+    const orgSettings = await admin.orgSettings.get(ORG);
+    res.json({ valid: true, orgName: orgSettings.name, role: validation.invite.role, email: validation.invite.email });
+  });
+
   app.post('/api/auth/accept-invite', async (req: Request, res: Response) => {
-    const { inviteId, name, password } = req.body ?? {};
-    if (typeof inviteId !== 'string' || typeof name !== 'string' || typeof password !== 'string' || password.length < 8) {
-      res.status(400).json({ error: 'inviteId, name, and a password of at least 8 characters are required.' });
+    const { token, name, password } = req.body ?? {};
+    if (typeof token !== 'string' || typeof name !== 'string' || typeof password !== 'string' || password.length < 8) {
+      res.status(400).json({ error: 'token, name, and a password of at least 8 characters are required.' });
       return;
     }
     try {
-      const user = await admin.auth.acceptInvite(ORG, inviteId, { name, password });
-      const { session } = await admin.auth.login(ORG, user.email, password);
+      const user = await admin.auth.acceptInvite(token, { name, password });
+      const { session } = await admin.auth.login(user.orgId, user.email, password);
       res.status(201).json({ token: session.token, user: publicUser(user) });
     } catch (err) {
       res.status(err instanceof AuthError ? 400 : 500).json({ error: String(err instanceof Error ? err.message : err) });
@@ -198,12 +212,23 @@ export function createServer(cfg: ServerConfig, opts: HttpServerOptions = {}): E
       res.status(400).json({ error: 'email and a valid role are required.' });
       return;
     }
-    const { inviteId } = await admin.auth.inviteUser(ORG, req.user!.id, { email, role });
+    const invite = await admin.auth.inviteUser(ORG, req.user!.id, { email, role });
     await admin.auditLog.record({
       orgId: ORG, actorUserId: req.user!.id, actorEmail: req.user!.email,
       action: 'user.invited', target: email,
     });
-    res.status(201).json({ inviteId });
+    const emailResult = await sendInviteEmail(admin, cfg, invite, req.user!.name);
+    res.status(201).json({ inviteId: invite.id, emailSent: emailResult.sent, emailError: emailResult.error });
+  });
+
+  adminRouter.post('/users/invite/:id/resend', async (req: Request, res: Response) => {
+    try {
+      const invite = await admin.auth.resendInvite(ORG, req.params.id ?? '');
+      const emailResult = await sendInviteEmail(admin, cfg, invite, req.user!.name);
+      res.json({ inviteId: invite.id, emailSent: emailResult.sent, emailError: emailResult.error });
+    } catch (err) {
+      res.status(err instanceof AuthError ? 404 : 500).json({ error: String(err instanceof Error ? err.message : err) });
+    }
   });
 
   adminRouter.patch('/users/:id/role', async (req: Request, res: Response) => {
@@ -301,4 +326,28 @@ function publicUser(user: { id: string; email: string; name: string; role: strin
 
 function isRole(value: unknown): value is 'csm' | 'manager' | 'exec' | 'admin' {
   return value === 'csm' || value === 'manager' || value === 'exec' || value === 'admin';
+}
+
+/**
+ * Composes and sends the invite email. The invite record is ALWAYS already
+ * persisted by the time this runs (`inviteUser`/`resendInvite` create it first), so
+ * a send failure never loses the invite — it just means the admin needs to hit
+ * "Resend" (or share the link manually) once the provider issue is fixed. Never
+ * throws: the caller always gets a clear `{ sent, error }` back instead of a 500
+ * that would suggest the invite itself failed.
+ */
+async function sendInviteEmail(
+  admin: AdminServices,
+  cfg: ServerConfig,
+  invite: Invite,
+  inviterName: string,
+): Promise<{ sent: boolean; error?: string }> {
+  const orgSettings = await admin.orgSettings.get(invite.orgId);
+  const acceptUrl = `${cfg.appBaseUrl.replace(/\/$/, '')}/invite/${invite.token}`;
+  try {
+    await admin.email.sendInvite({ to: invite.email, orgName: orgSettings.name, inviterName, role: invite.role, acceptUrl });
+    return { sent: true };
+  } catch (err) {
+    return { sent: false, error: String(err instanceof Error ? err.message : err) };
+  }
 }

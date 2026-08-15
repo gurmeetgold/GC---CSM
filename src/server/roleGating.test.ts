@@ -36,21 +36,25 @@ async function bootstrapAdmin(base: string, email = 'owner@co.com') {
   return (await res.json()) as { token: string; user: { id: string } };
 }
 
-async function invite(base: string, adminToken: string, email: string, role: string) {
-  const res = await fetch(`${base}/api/admin/users/invite`, {
+/** Invites, then reads the invite's secret token back via the admin-only users list
+ *  (the invite-creation response deliberately does NOT return the token — see
+ *  DECISIONS.md's Phase 8 entry — so a real client only ever gets it via the email). */
+async function inviteAndGetToken(base: string, adminToken: string, email: string, role: string): Promise<string> {
+  await fetch(`${base}/api/admin/users/invite`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
     body: JSON.stringify({ email, role }),
   });
-  const body = (await res.json()) as { inviteId: string };
-  return body.inviteId;
+  const usersRes = await fetch(`${base}/api/admin/users`, { headers: { Authorization: `Bearer ${adminToken}` } });
+  const { invites } = (await usersRes.json()) as { invites: { email: string; token: string }[] };
+  return invites.find((i) => i.email === email)!.token;
 }
 
-async function acceptInvite(base: string, inviteId: string, name: string) {
+async function acceptInvite(base: string, token: string, name: string) {
   const res = await fetch(`${base}/api/auth/accept-invite`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ inviteId, name, password: 'userpass123' }),
+    body: JSON.stringify({ token, name, password: 'userpass123' }),
   });
   return (await res.json()) as { token: string; user: { role: string } };
 }
@@ -79,8 +83,8 @@ describe('role gating over HTTP', () => {
   it('GET /api/leadership: a csm user is blocked by ANY path (exec-gating, explicit)', async () => {
     await withServer(async (base) => {
       const admin = await bootstrapAdmin(base);
-      const inviteId = await invite(base, admin.token, 'csm-1@co.com', 'csm');
-      const csm = await acceptInvite(base, inviteId, 'CSM One');
+      const inviteToken = await inviteAndGetToken(base, admin.token, 'csm-1@co.com', 'csm');
+      const csm = await acceptInvite(base, inviteToken, 'CSM One');
       expect(csm.user.role).toBe('csm');
 
       const res = await fetch(`${base}/api/leadership`, { headers: { Authorization: `Bearer ${csm.token}` } });
@@ -91,8 +95,8 @@ describe('role gating over HTTP', () => {
   it('GET /api/leadership: a manager user is also blocked', async () => {
     await withServer(async (base) => {
       const admin = await bootstrapAdmin(base);
-      const inviteId = await invite(base, admin.token, 'mgr-1@co.com', 'manager');
-      const manager = await acceptInvite(base, inviteId, 'Manager One');
+      const inviteToken = await inviteAndGetToken(base, admin.token, 'mgr-1@co.com', 'manager');
+      const manager = await acceptInvite(base, inviteToken, 'Manager One');
 
       const res = await fetch(`${base}/api/leadership`, { headers: { Authorization: `Bearer ${manager.token}` } });
       expect(res.status).toBe(403);
@@ -102,8 +106,8 @@ describe('role gating over HTTP', () => {
   it('GET /api/leadership: an exec user CAN reach it', async () => {
     await withServer(async (base) => {
       const admin = await bootstrapAdmin(base);
-      const inviteId = await invite(base, admin.token, 'exec-1@co.com', 'exec');
-      const exec = await acceptInvite(base, inviteId, 'Exec One');
+      const inviteToken = await inviteAndGetToken(base, admin.token, 'exec-1@co.com', 'exec');
+      const exec = await acceptInvite(base, inviteToken, 'Exec One');
 
       const res = await fetch(`${base}/api/leadership`, { headers: { Authorization: `Bearer ${exec.token}` } });
       expect(res.status).toBe(200);
@@ -131,8 +135,8 @@ describe('role gating over HTTP', () => {
     await withServer(async (base) => {
       const admin = await bootstrapAdmin(base);
       for (const role of ['csm', 'manager', 'exec'] as const) {
-        const inviteId = await invite(base, admin.token, `${role}-blocked@co.com`, role);
-        const user = await acceptInvite(base, inviteId, `${role} blocked`);
+        const inviteToken = await inviteAndGetToken(base, admin.token, `${role}-blocked@co.com`, role);
+        const user = await acceptInvite(base, inviteToken, `${role} blocked`);
         const res = await fetch(`${base}/api/admin/integrations`, { headers: { Authorization: `Bearer ${user.token}` } });
         expect(res.status, `role ${role} should be blocked from /api/admin/*`).toBe(403);
       }
@@ -169,8 +173,8 @@ describe('role gating over HTTP', () => {
   it('GET /api/accounts scopes to a csm’s own book when authenticated', async () => {
     await withServer(async (base) => {
       const admin = await bootstrapAdmin(base);
-      const inviteId = await invite(base, admin.token, 'scope-csm@co.com', 'csm');
-      const csm = await acceptInvite(base, inviteId, 'Maya Chen'); // matches a mock ownerCsm name
+      const inviteToken = await inviteAndGetToken(base, admin.token, 'scope-csm@co.com', 'csm');
+      const csm = await acceptInvite(base, inviteToken, 'Maya Chen'); // matches a mock ownerCsm name
 
       const res = await fetch(`${base}/api/accounts`, { headers: { Authorization: `Bearer ${csm.token}` } });
       expect(res.status).toBe(200);

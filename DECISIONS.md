@@ -445,3 +445,86 @@ credentials — but that's a demo affordance, not a claim that the flow is real.
 `NEXT.md` records this as a followup. The invite record itself is real (persisted,
 drives the pending-invites list, and `POST /api/auth/accept-invite` genuinely creates
 the account with the invited role) — only the delivery channel is stubbed.
+
+---
+
+# Phase 8 Decisions — invite flow completion: real email + accept screen
+
+## 38. Email provider: Resend, owner-approved
+
+Chosen over SendGrid for lower setup friction and a free tier that comfortably
+covers transactional invite volume — see `SETUP_EMAIL.md` for the full comparison.
+Delivery goes through a raw `fetch` call to `api.resend.com` (`ResendEmailService`,
+`src/auth/emailService.ts`), not the `resend` npm SDK — same "typed HTTP client, no
+vendor SDK" posture as the Merge/Gong clients. No `EMAIL_API_KEY` → falls back to
+`LoggingEmailService` (Phase 7's log-only behavior), so local dev and CI stay
+credential-free, matching how every other integration in this app degrades
+gracefully without live credentials.
+
+## 39. Invite token model: separate random token, 90-day expiry, status-based single-use
+
+Phase 7's `Invite.id` (a sequential `invite-N`) doubled as the accept token —
+guessable, no expiry, and the record was **deleted** on accept so the admin console
+could never show "Accepted", only "Pending" (or nothing). Phase 8 fixes all three:
+
+- **`token`** is a separate `randomBytes(32)` base64url value (same generation as
+  session tokens), distinct from `id`. `id` stays a stable, non-secret row
+  identifier for admin actions (resend); `token` is the actual secret the accept
+  link carries, and it rotates on resend (the old link stops working immediately).
+- **`expiresAt`**: 90 days from creation (owner-specified, overriding the initially
+  proposed 7-day default).
+- **`status: 'pending' | 'accepted' | 'expired'`**, computed at read time from
+  `expiresAt` (never a background job) and set to `'accepted'` on use. The record
+  stays after acceptance instead of being deleted, so the Users & Roles page shows
+  real invite history, not just a shrinking pending list.
+- Single-use is enforced by **status**, not deletion — `acceptInvite` re-validates
+  through the same `validateInviteToken` the public "show me the org/role" endpoint
+  uses, so the two paths can never disagree about what's valid.
+
+## 40. Invite-creation response never returns the token
+
+`POST /api/admin/users/invite` returns `{ inviteId, emailSent, emailError }` —
+**not** the token. The only ways to obtain a token are (a) the email itself, or (b)
+the admin-only `GET /api/admin/users` listing (which DOES include it, since an admin
+already has full access to invite the same person). This keeps the token out of
+response logs / browser history for the common path while still letting an admin
+manually share a link if email delivery fails.
+
+## 41. A failed send never loses the invite
+
+The invite record is always persisted **before** `EmailService.sendInvite` is
+attempted (`inviteUser`/`resendInvite` create/regenerate the record first; the route
+composes and sends the email second). A send failure is caught and returned as
+`{ emailSent: false, emailError }` — never a 500 that would suggest the invite
+itself failed. The admin sees this in the Users & Roles page and can hit **Resend**
+once the provider issue is fixed, or share the link manually. `AuthService` itself
+holds no logger and never touches email at all (decoupled — see #42), so it cannot
+leak anything through a send-failure path.
+
+## 42. `AuthService` no longer sends email — the HTTP layer composes it
+
+Phase 7's `AuthService.inviteUser` called the mailer directly with just an email/
+role. Phase 8's email needs org name and inviter name, which `AuthService` doesn't
+hold (no `OrgSettingsStore`, no access to "who is calling"). Rather than threading
+those into the auth layer, `inviteUser`/`resendInvite` now just return the `Invite`
+(token included), and `src/server/http.ts`'s `sendInviteEmail()` helper composes the
+message using `req.user!.name` (already available) and `admin.orgSettings.get()`.
+Keeps `AuthService` framework-agnostic and testable with zero HTTP, same as before.
+
+## 43. Accept-invite is the one URL-addressable route in an otherwise state-routed SPA
+
+The app has never used a router library — navigation is in-memory `Route` state
+(Phase 1 onward). Phase 8 needed exactly one real URL (`/invite/:token`, reachable
+while signed out) and added the smallest possible mechanism for it: a `Router`
+component in `App.tsx` that regex-matches `window.location.pathname` once, with no
+new dependency. Once acceptance flips auth status to `signed-in`, the URL is
+cleared via `history.replaceState` so a refresh doesn't re-show the accept screen.
+An already-signed-in user hitting a stale invite link just sees the normal app —
+invite links are for new users, and this avoids a confusing state overlap.
+
+## 44. Landing page by role, on both login and invite-accept
+
+`landingRoute(role)`: `csm`/`manager` → Home (Portfolio), `exec` → Executive View,
+`admin` → the Admin Console they were invited to run. Applied uniformly to
+`AppContent`'s initial route state, so it's the same behavior whether someone signs
+in directly or arrives via `/invite/:token` — one rule, not two.

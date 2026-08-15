@@ -159,12 +159,10 @@ including all Phase 4 fields (`tickets`, `opportunities`, `trendSeries`).
 - Docs: this section, `DECISIONS.md` #34–#37, `DATA_HANDLING.md`'s new Phase 7
   sections, `.env.example` unchanged (no new required secrets this phase).
 
-## Known stub: invite emails aren't actually sent
-`LoggingMailer` logs `[stub] invite email not sent (no email service configured)`
-instead of delivering anything. The invite record itself is real — it drives the
-pending-invites list and `accept-invite` genuinely creates the account with the
-invited role — only the delivery channel is missing. Wiring a real one (SES, Postgres
-outbox, etc.) is a `Mailer` implementation swap, no call-site changes needed.
+## ~~Known stub: invite emails aren't actually sent~~ — closed in Phase 8
+Real delivery via Resend (`ResendEmailService`), an in-app `/invite/:token` accept
+screen, and a real random/expiring/single-use invite token replaced the sequential
+guessable id. See the Phase 8 section below.
 
 ## How to create the first admin and test each role (manual)
 
@@ -193,8 +191,54 @@ VITE_BACKEND_URL=http://localhost:8787 npm run dev   # SPA on :5173
    to see it take effect, check the Data & Security tab's audit log for the actions
    you just took.
 
-**Not yet built:** an in-app "accept invite" screen (the endpoint exists,
-`POST /api/auth/accept-invite`, but there's no form for it — see the stub note
-above; this is next on the list once real invite emails are wired). Everything is
-in-memory, so restarting the server process resets all users, sessions, thresholds,
-and the audit log — there is no persistence across restarts in this phase.
+Everything is in-memory, so restarting the server process resets all users,
+sessions, invites, thresholds, and the audit log — there is no persistence across
+restarts in this phase. (Step 2/3 above are now simpler post-Phase-8: the invite
+screen exists and, with `EMAIL_API_KEY` set, the email actually arrives — see below.)
+
+---
+
+# Phase 8 — invite flow completion: real email + accept screen
+
+## Shipped this phase
+- **Real email delivery** via Resend (`SETUP_EMAIL.md`, `DECISIONS.md` #38):
+  `EmailService` interface, `ResendEmailService` (raw `fetch`, no vendor SDK),
+  `LoggingEmailService` fallback when `EMAIL_API_KEY` is unset — local dev/CI stay
+  credential-free.
+- **Invite token model hardened** (`DECISIONS.md` #39): a separate crypto-random
+  `token` (distinct from the invite's `id`), 90-day expiry, and a persisted
+  `status: 'pending' | 'accepted' | 'expired'` — single-use is enforced by status,
+  not by deleting the record, so the admin console can show real invite history.
+- **`/invite/:token` accept screen** — the one URL-addressable route in an
+  otherwise state-routed SPA (`DECISIONS.md` #43). Validates the token, shows the
+  org/role before asking for a password, and gives a distinct message for expired /
+  already-used / already-registered rather than one generic error.
+- **Landing-page-by-role** on both login and invite-accept (`DECISIONS.md` #44):
+  csm/manager → Portfolio, exec → Executive View, admin → Admin Console.
+- **Admin polish**: Users & Roles now shows Pending/Accepted/Expired per invite and
+  a **Resend** action (fresh token, old link invalidated immediately).
+- 395 tests green (up from 367), signal engine and `domain/thresholds.ts`
+  **untouched** (empty diff, checked explicitly).
+
+## How to send yourself a real test invite and accept it
+
+1. Follow `SETUP_EMAIL.md` steps 1–4 (Resend account, API key, `.env`).
+2. `DATA_SOURCE=mock npm run server` (backend on :8787), then
+   `VITE_BACKEND_URL=http://localhost:8787 npm run dev` (SPA on :5173).
+3. Sign in as an admin (or bootstrap the first one — see above).
+4. **Admin Console → Users & Roles → Invite a teammate** — enter your own email
+   (the one verified on your Resend account, if still in sandbox mode) and a role.
+5. Check your inbox: "`<Your Name>` invited you to `<Org>` on SignalOS" with an
+   **Accept your invite** link to `http://localhost:5173/invite/<token>`.
+6. Click it — you land on the accept screen, see the org + role, set a name and
+   password, and are signed in immediately as that role, landing on the
+   role-appropriate page (Portfolio / Executive View / Admin Console).
+7. Try it again with the same link — you'll see "This invite has already been
+   used." Try **Resend** from the admin page — the old link stops working, the new
+   email's link works.
+
+## Without a real email provider configured
+Everything above still works except step 5 — the invite is logged to the server
+console (`[stub] invite email not sent...`) instead of emailed. An admin can copy
+the token from `GET /api/admin/users` (invites include their token — admin-only) and
+build the link manually: `http://localhost:5173/invite/<token>`.

@@ -1,19 +1,17 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { AuthService, AuthError } from './authService';
 import { InMemoryUserStore } from './userStore';
 import { InMemorySessionStore } from './sessionStore';
 import { InMemoryInviteStore } from './inviteStore';
-import type { Mailer } from './mailer';
 import { hashPassword, verifyPassword } from './passwords';
 
 const ORG = 'org-1';
 
-function makeService() {
+function makeService(clock?: () => Date) {
   const users = new InMemoryUserStore();
   const sessions = new InMemorySessionStore();
-  const invites = new InMemoryInviteStore();
-  const mailer: Mailer = { sendInvite: vi.fn(async () => {}) };
-  return { service: new AuthService(users, sessions, invites, mailer), users, sessions, invites, mailer };
+  const invites = clock ? new InMemoryInviteStore(clock) : new InMemoryInviteStore();
+  return { service: new AuthService(users, sessions, invites), users, sessions, invites };
 }
 
 describe('passwords', () => {
@@ -71,20 +69,90 @@ describe('AuthService.login', () => {
   });
 });
 
-describe('AuthService invites', () => {
-  it('invites a user, logs (does not send real email), and accept creates the account with the invited role', async () => {
-    const { service, mailer } = makeService();
+describe('AuthService invites (Phase 8: token-based, does not send email itself)', () => {
+  it('creates a pending invite with a real random token distinct from its id', async () => {
+    const { service } = makeService();
     const admin = await service.bootstrapFirstAdmin(ORG, { email: 'a@co.com', name: 'A', password: 'pw123456' });
-    const { inviteId } = await service.inviteUser(ORG, admin.id, { email: 'csm@co.com', role: 'csm' });
-    expect(mailer.sendInvite).toHaveBeenCalledWith('csm@co.com', ORG, inviteId, 'csm');
-
-    const created = await service.acceptInvite(ORG, inviteId, { name: 'CSM Person', password: 'pw123456' });
-    expect(created.role).toBe('csm');
-    expect(created.email).toBe('csm@co.com');
+    const invite = await service.inviteUser(ORG, admin.id, { email: 'csm@co.com', role: 'csm' });
+    expect(invite.status).toBe('pending');
+    expect(invite.token).toBeTruthy();
+    expect(invite.token).not.toBe(invite.id);
+    expect(invite.token.length).toBeGreaterThan(20);
   });
 
-  it('rejects accepting an unknown or already-used invite', async () => {
+  it('accept-by-token creates the account with the invited role and marks the invite accepted (not deleted)', async () => {
+    const { service, invites } = makeService();
+    const admin = await service.bootstrapFirstAdmin(ORG, { email: 'a@co.com', name: 'A', password: 'pw123456' });
+    const invite = await service.inviteUser(ORG, admin.id, { email: 'csm@co.com', role: 'csm' });
+
+    const created = await service.acceptInvite(invite.token, { name: 'CSM Person', password: 'pw123456' });
+    expect(created.role).toBe('csm');
+    expect(created.email).toBe('csm@co.com');
+    expect(created.orgId).toBe(ORG);
+
+    const stored = await invites.findById(ORG, invite.id);
+    expect(stored?.status).toBe('accepted');
+  });
+
+  it('rejects an unknown token', async () => {
     const { service } = makeService();
-    await expect(service.acceptInvite(ORG, 'nope', { name: 'X', password: 'pw123456' })).rejects.toThrow(AuthError);
+    await expect(service.acceptInvite('not-a-real-token', { name: 'X', password: 'pw123456' })).rejects.toThrow(AuthError);
+  });
+
+  it('rejects reusing an already-accepted token (single-use, enforced by status)', async () => {
+    const { service } = makeService();
+    const admin = await service.bootstrapFirstAdmin(ORG, { email: 'a@co.com', name: 'A', password: 'pw123456' });
+    const invite = await service.inviteUser(ORG, admin.id, { email: 'csm@co.com', role: 'csm' });
+    await service.acceptInvite(invite.token, { name: 'First', password: 'pw123456' });
+    await expect(service.acceptInvite(invite.token, { name: 'Second', password: 'pw123456' })).rejects.toThrow(/already been used/);
+  });
+
+  it('rejects an expired token', async () => {
+    let now = new Date('2026-01-01T00:00:00Z');
+    const { service, users } = makeService(() => now);
+    const admin = await users.create({ orgId: ORG, email: 'a@co.com', name: 'A', role: 'admin', password: 'pw123456' });
+    const invite = await service.inviteUser(ORG, admin.id, { email: 'csm@co.com', role: 'csm' });
+
+    now = new Date('2026-04-05T00:00:00Z'); // 94 days later, past the 90-day TTL
+    await expect(service.acceptInvite(invite.token, { name: 'X', password: 'pw123456' })).rejects.toThrow(/expired/);
+  });
+
+  it('rejects an invite for an email that already has an account, without letting them silently create a duplicate', async () => {
+    const { service, users } = makeService();
+    const admin = await users.create({ orgId: ORG, email: 'a@co.com', name: 'A', role: 'admin', password: 'pw123456' });
+    await users.create({ orgId: ORG, email: 'existing@co.com', name: 'Existing', role: 'csm', password: 'pw123456' });
+    const invite = await service.inviteUser(ORG, admin.id, { email: 'existing@co.com', role: 'csm' });
+    await expect(service.acceptInvite(invite.token, { name: 'X', password: 'pw123456' })).rejects.toThrow(/already exists/);
+  });
+
+  it('validateInviteToken reports each failure reason distinctly', async () => {
+    const { service, users } = makeService();
+    const admin = await users.create({ orgId: ORG, email: 'a@co.com', name: 'A', role: 'admin', password: 'pw123456' });
+
+    expect(await service.validateInviteToken('nope')).toEqual({ ok: false, reason: 'not_found' });
+
+    const invite = await service.inviteUser(ORG, admin.id, { email: 'csm@co.com', role: 'csm' });
+    const ok = await service.validateInviteToken(invite.token);
+    expect(ok.ok).toBe(true);
+
+    await service.acceptInvite(invite.token, { name: 'X', password: 'pw123456' });
+    const used = await service.validateInviteToken(invite.token);
+    expect(used).toMatchObject({ ok: false, reason: 'already_used' });
+  });
+
+  it('resendInvite issues a fresh token and invalidates the old one', async () => {
+    const { service } = makeService();
+    const admin = await service.bootstrapFirstAdmin(ORG, { email: 'a@co.com', name: 'A', password: 'pw123456' });
+    const original = await service.inviteUser(ORG, admin.id, { email: 'csm@co.com', role: 'csm' });
+    const resent = await service.resendInvite(ORG, original.id);
+
+    expect(resent.token).not.toBe(original.token);
+    expect((await service.validateInviteToken(original.token)).ok).toBe(false);
+    expect((await service.validateInviteToken(resent.token)).ok).toBe(true);
+  });
+
+  it('resendInvite on an unknown invite id throws', async () => {
+    const { service } = makeService();
+    await expect(service.resendInvite(ORG, 'nope')).rejects.toThrow(AuthError);
   });
 });

@@ -9,10 +9,16 @@ interface AuthState {
   error: string | null;
 }
 
+export type InviteValidationResult =
+  | { valid: true; orgName: string; role: string; email: string }
+  | { valid: false; reason: 'not_found' | 'expired' | 'already_used' | 'already_registered' };
+
 interface AuthContextValue extends AuthState {
   login(email: string, password: string): Promise<void>;
   bootstrapAdmin(input: { email: string; name: string; password: string }): Promise<void>;
-  acceptInvite(input: { inviteId: string; name: string; password: string }): Promise<void>;
+  /** Read-only: shows what an invite token is for, without consuming it. Public — works logged out. */
+  validateInvite(token: string): Promise<InviteValidationResult>;
+  acceptInvite(input: { token: string; name: string; password: string }): Promise<void>;
   logout(): Promise<void>;
   /** True once role/exec/admin gating actually applies (a backend is configured). */
   authEnabled: boolean;
@@ -103,8 +109,18 @@ export function AuthProvider({ baseUrl, children }: { baseUrl: string | undefine
     [api],
   );
 
+  const validateInvite = useCallback(
+    async (token: string): Promise<InviteValidationResult> => {
+      if (!api) return { valid: false, reason: 'not_found' };
+      const res = await fetch(`${api}/api/auth/invite/${encodeURIComponent(token)}`);
+      const body = await res.json();
+      return res.ok ? { valid: true, ...body } : { valid: false, reason: body.reason ?? 'not_found' };
+    },
+    [api],
+  );
+
   const acceptInvite = useCallback(
-    async (input: { inviteId: string; name: string; password: string }) => {
+    async (input: { token: string; name: string; password: string }) => {
       if (!api) return;
       const res = await fetch(`${api}/api/auth/accept-invite`, {
         method: 'POST',
@@ -131,6 +147,6 @@ export function AuthProvider({ baseUrl, children }: { baseUrl: string | undefine
     setState({ status: 'signed-out', user: null, error: null });
   }, [api]);
 
-  const value: AuthContextValue = { ...state, login, bootstrapAdmin, acceptInvite, logout, authEnabled: !!api };
+  const value: AuthContextValue = { ...state, login, bootstrapAdmin, validateInvite, acceptInvite, logout, authEnabled: !!api };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

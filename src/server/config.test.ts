@@ -43,4 +43,21 @@ describe('resolveServerConfig (independent switches)', () => {
   it('assertLiveConfig passes for all-mock', () => {
     expect(() => assertLiveConfig(resolveServerConfig({}))).not.toThrow();
   });
+
+  it('defaults appBaseUrl and leaves email unset when no EMAIL_API_KEY is present', () => {
+    const cfg = resolveServerConfig({});
+    expect(cfg.appBaseUrl).toBe('http://localhost:5173');
+    expect(cfg.email).toBeUndefined();
+  });
+
+  it('reads email config from env, with a sandbox-sender default for EMAIL_FROM', () => {
+    const cfg = resolveServerConfig({ EMAIL_API_KEY: 're_123', APP_BASE_URL: 'https://app.example.com' });
+    expect(cfg.email).toEqual({ apiKey: 're_123', from: 'SignalOS <onboarding@resend.dev>' });
+    expect(cfg.appBaseUrl).toBe('https://app.example.com');
+  });
+
+  it('honors an explicit EMAIL_FROM override', () => {
+    const cfg = resolveServerConfig({ EMAIL_API_KEY: 're_123', EMAIL_FROM: 'Acme <invites@acme.com>' });
+    expect(cfg.email?.from).toBe('Acme <invites@acme.com>');
+  });
 });

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useBook } from './useBook';
 import { AppShell, type Route, type CurrentUserInfo } from './ui/AppShell';
 import { Home } from './screens/Home';
@@ -15,13 +15,41 @@ import { HttpAnswerEngine } from '../answer/http/HttpAnswerEngine';
 import { backendUrl } from './bookProvider';
 import { AuthProvider, useAuth, canSeeExecutiveView, canSeeAdminConsole } from './auth/AuthContext';
 import { LoginScreen } from './auth/LoginScreen';
+import { AcceptInviteScreen } from './auth/AcceptInviteScreen';
+import type { Role } from '../domain';
 
 export default function App() {
   return (
     <AuthProvider baseUrl={backendUrl()}>
-      <AuthGate />
+      <Router />
     </AuthProvider>
   );
+}
+
+/**
+ * No router library — this app has one public route worth a real URL
+ * (`/invite/:token`, reachable while signed out) and otherwise navigates via
+ * in-memory state (unchanged since Phase 1). A signed-in user hitting a stale
+ * invite link just sees the normal app; the invite screen is for new users only.
+ */
+function Router() {
+  const { status } = useAuth();
+  const [path, setPath] = useState(() => window.location.pathname);
+  const inviteToken = path.match(/^\/invite\/([^/]+)\/?$/)?.[1];
+
+  useEffect(() => {
+    // Once acceptance flips us to signed-in, drop the /invite/:token URL so a
+    // refresh (or the back button) doesn't re-show the accept screen.
+    if (inviteToken && status === 'signed-in') {
+      window.history.replaceState({}, '', '/');
+      setPath('/');
+    }
+  }, [inviteToken, status]);
+
+  if (inviteToken && status !== 'signed-in') {
+    return <AcceptInviteScreen token={inviteToken} onGoToLogin={() => { window.history.replaceState({}, '', '/'); setPath('/'); }} />;
+  }
+  return <AuthGate />;
 }
 
 /**
@@ -37,10 +65,18 @@ function AuthGate() {
   return <AppContent />;
 }
 
+/** CSM/manager land on Portfolio; exec lands on Executive View; admin lands on the
+ *  console they were invited to run. Pre-auth demo (no user) always starts at Home. */
+function landingRoute(role: Role | undefined): Route {
+  if (role === 'exec') return 'executive';
+  if (role === 'admin') return 'admin';
+  return 'home';
+}
+
 function AppContent() {
   const { loading, error, book, now, reasoning, connections } = useBook();
   const { user, authEnabled, logout } = useAuth();
-  const [route, setRoute] = useState<Route>('home');
+  const [route, setRoute] = useState<Route>(() => landingRoute(user?.role));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [askSeed, setAskSeed] = useState('');
 

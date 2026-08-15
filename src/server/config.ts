@@ -31,13 +31,20 @@ export interface ServerConfig {
     model: string;
   };
   tokenEncryptionKey?: string;
+  /** Phase 8: real invite email. Absent → `LoggingEmailService` fallback (no send, no error). */
+  email?: {
+    apiKey: string;
+    from: string;
+  };
+  /** Where the SPA lives, for building the `/invite/:token` accept link in emails. */
+  appBaseUrl: string;
 }
 
 export function resolveServerConfig(env: Env): ServerConfig {
   const dataSource = resolveDataSourceKind(env.DATA_SOURCE);
   const answerEngine = resolveAnswerEngineKind(env.ANSWER_ENGINE);
 
-  const cfg: ServerConfig = { dataSource, answerEngine };
+  const cfg: ServerConfig = { dataSource, answerEngine, appBaseUrl: env.APP_BASE_URL ?? 'http://localhost:5173' };
 
   if (env.MERGE_ACCESS_KEY && env.MERGE_ACCOUNT_TOKEN) {
     cfg.merge = {
@@ -60,6 +67,11 @@ export function resolveServerConfig(env: Env): ServerConfig {
   }
 
   cfg.tokenEncryptionKey = env.TOKEN_ENCRYPTION_KEY;
+
+  if (env.EMAIL_API_KEY) {
+    cfg.email = { apiKey: env.EMAIL_API_KEY, from: env.EMAIL_FROM ?? 'SignalOS <onboarding@resend.dev>' };
+  }
+
   return cfg;
 }
 

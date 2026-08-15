@@ -1,7 +1,7 @@
 import { InMemoryUserStore, type UserStore } from '../auth/userStore';
 import { InMemorySessionStore, type SessionStore } from '../auth/sessionStore';
 import { InMemoryInviteStore, type InviteStore } from '../auth/inviteStore';
-import { LoggingMailer, type Mailer } from '../auth/mailer';
+import { LoggingEmailService, ResendEmailService, type EmailService } from '../auth/emailService';
 import { AuthService } from '../auth/authService';
 import { InMemoryThresholdStore, type ThresholdStore } from '../admin/thresholdStore';
 import { InMemoryAuditLogStore, type AuditLogStore } from '../admin/auditLog';
@@ -22,7 +22,7 @@ export interface AdminServices {
   users: UserStore;
   sessions: SessionStore;
   invites: InviteStore;
-  mailer: Mailer;
+  email: EmailService;
   auth: AuthService;
   thresholds: ThresholdStore;
   auditLog: AuditLogStore;
@@ -35,8 +35,10 @@ export function buildAdminServices(cfg: ServerConfig): AdminServices {
   const users = new InMemoryUserStore();
   const sessions = new InMemorySessionStore();
   const invites = new InMemoryInviteStore();
-  const mailer = new LoggingMailer();
-  const auth = new AuthService(users, sessions, invites, mailer);
+  // No EMAIL_API_KEY configured -> fall back to logging, same as every other
+  // integration in this app degrading gracefully without live credentials.
+  const email: EmailService = cfg.email ? new ResendEmailService(cfg.email) : new LoggingEmailService();
+  const auth = new AuthService(users, sessions, invites);
   const thresholds = new InMemoryThresholdStore();
   const auditLog = new InMemoryAuditLogStore();
   const orgSettings = new InMemoryOrgSettingsStore();
@@ -52,5 +54,5 @@ export function buildAdminServices(cfg: ServerConfig): AdminServices {
   const integrations: IntegrationsStore =
     cfg.dataSource === 'mock' ? new MockIntegrationsStore() : new LiveIntegrationsStore(tokens);
 
-  return { users, sessions, invites, mailer, auth, thresholds, auditLog, orgSettings, integrations, tokens };
+  return { users, sessions, invites, email, auth, thresholds, auditLog, orgSettings, integrations, tokens };
 }

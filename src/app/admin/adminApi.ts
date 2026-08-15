@@ -38,7 +38,13 @@ export const adminApi = {
 
   listUsers: () => call<{ users: User[]; invites: Invite[] }>('/api/admin/users'),
   inviteUser: (email: string, role: Role) =>
-    call<{ inviteId: string }>('/api/admin/users/invite', { method: 'POST', body: JSON.stringify({ email, role }) }),
+    call<{ inviteId: string; emailSent: boolean; emailError?: string }>(
+      '/api/admin/users/invite', { method: 'POST', body: JSON.stringify({ email, role }) },
+    ),
+  resendInvite: (inviteId: string) =>
+    call<{ inviteId: string; emailSent: boolean; emailError?: string }>(
+      `/api/admin/users/invite/${inviteId}/resend`, { method: 'POST' },
+    ),
   setUserRole: (id: string, role: Role) =>
     call<{ user: User }>(`/api/admin/users/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) }),
   setManagedCsmNames: (id: string, managedCsmNames: string[]) =>

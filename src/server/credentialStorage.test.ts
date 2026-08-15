@@ -3,12 +3,20 @@ import { AuthService } from '../auth/authService';
 import { InMemoryUserStore } from '../auth/userStore';
 import { InMemorySessionStore } from '../auth/sessionStore';
 import { InMemoryInviteStore } from '../auth/inviteStore';
-import { LoggingMailer } from '../auth/mailer';
+import { LoggingEmailService, ResendEmailService } from '../auth/emailService';
 import { EncryptedInMemoryTokenStore } from '../integrations/auth/tokenStore';
 import { generateKeyBase64 } from '../integrations/auth/crypto';
 
 const PLAINTEXT_PASSWORD = 'super-secret-plaintext-99';
 const PLAINTEXT_TOKEN = 'sf-account-token-abc123';
+const PLAINTEXT_EMAIL_API_KEY = 're_super_secret_api_key_123';
+
+function makeAuth() {
+  const users = new InMemoryUserStore();
+  const sessions = new InMemorySessionStore();
+  const invites = new InMemoryInviteStore();
+  return { auth: new AuthService(users, sessions, invites), users, sessions, invites };
+}
 
 describe('credential storage: no plaintext, no logging', () => {
   afterEach(() => {
@@ -16,12 +24,7 @@ describe('credential storage: no plaintext, no logging', () => {
   });
 
   it('a user password is never stored as plaintext anywhere reachable from UserStore', async () => {
-    const users = new InMemoryUserStore();
-    const sessions = new InMemorySessionStore();
-    const invites = new InMemoryInviteStore();
-    const mailer = new LoggingMailer({ info: () => {} });
-    const auth = new AuthService(users, sessions, invites, mailer);
-
+    const { auth, users } = makeAuth();
     const user = await auth.bootstrapFirstAdmin('org-1', { email: 'a@co.com', name: 'A', password: PLAINTEXT_PASSWORD });
 
     // Every reachable read of the user (by id, by email, by list) must never surface
@@ -32,11 +35,7 @@ describe('credential storage: no plaintext, no logging', () => {
   });
 
   it('login never logs the plaintext password to console', async () => {
-    const users = new InMemoryUserStore();
-    const sessions = new InMemorySessionStore();
-    const invites = new InMemoryInviteStore();
-    const mailer = new LoggingMailer({ info: () => {} });
-    const auth = new AuthService(users, sessions, invites, mailer);
+    const { auth } = makeAuth();
     await auth.bootstrapFirstAdmin('org-1', { email: 'a@co.com', name: 'A', password: PLAINTEXT_PASSWORD });
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -52,19 +51,44 @@ describe('credential storage: no plaintext, no logging', () => {
     }
   });
 
-  it('an invited user’s accept-invite password never appears in the invite-send log', async () => {
-    const users = new InMemoryUserStore();
-    const sessions = new InMemorySessionStore();
-    const invites = new InMemoryInviteStore();
-    const seen: unknown[] = [];
-    const mailer = new LoggingMailer({ info: (msg, meta) => seen.push([msg, meta]) });
-    const auth = new AuthService(users, sessions, invites, mailer);
-
+  it('an invite/accept round trip never causes AuthService to log anything at all (it holds no logger)', async () => {
+    const { auth } = makeAuth();
     const admin = await auth.bootstrapFirstAdmin('org-1', { email: 'a@co.com', name: 'A', password: PLAINTEXT_PASSWORD });
-    const { inviteId } = await auth.inviteUser('org-1', admin.id, { email: 'b@co.com', role: 'csm' });
-    await auth.acceptInvite('org-1', inviteId, { name: 'B', password: PLAINTEXT_PASSWORD });
+    const invite = await auth.inviteUser('org-1', admin.id, { email: 'b@co.com', role: 'csm' });
 
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await auth.acceptInvite(invite.token, { name: 'B', password: PLAINTEXT_PASSWORD });
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it('the invite email itself (Phase 8) never carries a password — only org/role/link', async () => {
+    const seen: unknown[] = [];
+    const service = new LoggingEmailService({ info: (msg, meta) => seen.push([msg, meta]) });
+    await service.sendInvite({
+      to: 'b@co.com', orgName: 'Acme', inviterName: 'A', role: 'csm',
+      acceptUrl: 'http://localhost:5173/invite/some-token',
+    });
     expect(JSON.stringify(seen)).not.toContain(PLAINTEXT_PASSWORD);
+  });
+
+  it('ResendEmailService never logs or embeds the API key in the outgoing request body', async () => {
+    const fetchSpy = vi.fn(async (_url: string, _init: RequestInit) => new Response('{}', { status: 200 }));
+    const service = new ResendEmailService({ apiKey: PLAINTEXT_EMAIL_API_KEY, from: 'a@x.com' }, fetchSpy);
+    await service.sendInvite({ to: 'b@co.com', orgName: 'Acme', inviterName: 'A', role: 'csm', acceptUrl: 'http://x/invite/t' });
+
+    const [, init] = fetchSpy.mock.calls[0]!;
+    // The key belongs in the Authorization header (sent over TLS to the provider),
+    // never in the JSON body a bug could accidentally log or echo back.
+    expect(init!.body as string).not.toContain(PLAINTEXT_EMAIL_API_KEY);
+    expect((init!.headers as Record<string, string>).Authorization).toBe(`Bearer ${PLAINTEXT_EMAIL_API_KEY}`);
+  });
+
+  it('a failed Resend send surfaces a clear error without leaking the API key in it', async () => {
+    const fetchSpy = vi.fn(async () => new Response('unauthorized', { status: 401 }));
+    const service = new ResendEmailService({ apiKey: PLAINTEXT_EMAIL_API_KEY, from: 'a@x.com' }, fetchSpy);
+    await expect(
+      service.sendInvite({ to: 'b@co.com', orgName: 'Acme', inviterName: 'A', role: 'csm', acceptUrl: 'http://x/invite/t' }),
+    ).rejects.toThrow(/HTTP 401/);
   });
 
   it('integration tokens are stored encrypted at rest, never as plaintext', async () => {

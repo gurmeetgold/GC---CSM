@@ -31,12 +31,28 @@ export interface User {
   lastActiveAt: string | null;
 }
 
-/** A pending invite — no password set yet, no session possible until accepted. */
+/** Lifecycle of an invite record (Phase 8). `expired` is computed at read time from
+ *  `expiresAt`, not a separate write — a store never needs a cron to "expire" one. */
+export type InviteStatus = 'pending' | 'accepted' | 'expired';
+
+/**
+ * An invite to join an org. `token` is the secret the accept link carries — a
+ * cryptographically random value, distinct from `id` (`id` is a stable, non-secret
+ * row identifier used for admin actions like resend; `token` is what proves the
+ * holder was actually emailed the link, and rotates on resend). No password is set
+ * until the invite is accepted.
+ */
 export interface Invite {
   id: string;
   orgId: string;
   email: string;
   role: Role;
   invitedByUserId: string;
+  token: string;
   createdAt: string;
+  expiresAt: string;
+  /** Set once the invite is used; the record stays (unlike Phase 7's delete-on-accept)
+   *  so admins can see "Accepted" in the Users & Roles list instead of the invite
+   *  silently vanishing. */
+  status: InviteStatus;
 }
