@@ -1,5 +1,5 @@
 import type { Account } from '../../domain';
-import type { DataSource } from '../DataSource';
+import type { DataSource, SourceConnection, ConnectionStatus } from '../DataSource';
 import type { GongClient, MergeClient } from './clients';
 import { SourceUnavailableError } from './clients';
 import { assembleAccount, callBelongsToAccount, type AccountBundle } from './mappers';
@@ -10,6 +10,8 @@ export interface UnifiedApiLogger {
 }
 
 const noopLogger: UnifiedApiLogger = { warn: () => {} };
+
+interface SubResult<T> { ok: boolean; value: T[]; count: number }
 
 /**
  * The real live data source: unified Salesforce (via Merge) + Gong, mapped to the
@@ -25,6 +27,13 @@ const noopLogger: UnifiedApiLogger = { warn: () => {} };
  */
 export class UnifiedApiDataSource implements DataSource {
   readonly name = 'unified-api';
+
+  /** Per-source connection status from the last sync (for the UI). */
+  private lastConnections: SourceConnection[] = [
+    { name: 'Merge CRM', status: 'not_connected' },
+    { name: 'Merge Ticketing', status: 'not_connected' },
+    { name: 'Gong', status: this.gong ? 'not_connected' : 'not_connected' },
+  ];
 
   constructor(
     private readonly merge: MergeClient,
@@ -42,20 +51,30 @@ export class UnifiedApiDataSource implements DataSource {
     // Backbone: the CRM account list. A failure here is fatal to the whole book.
     const accounts = await this.merge.listAccounts();
 
-    // Best-effort side data — each degrades to [] independently.
+    // Best-effort side data — each degrades to [] independently, tracking status.
     const [contacts, opportunities, tickets, calls] = await Promise.all([
-      this.safe('merge', () => this.merge.listContacts(), [] as MergeContact[]),
-      this.safe('merge', () => this.merge.listOpportunities(), [] as MergeOpportunity[]),
-      this.safe('merge', () => this.merge.listTickets(), [] as MergeTicket[]),
+      this.tracked('merge', () => this.merge.listContacts(), [] as MergeContact[]),
+      this.tracked('merge', () => this.merge.listOpportunities(), [] as MergeOpportunity[]),
+      this.tracked('merge', () => this.merge.listTickets(), [] as MergeTicket[]),
       this.gong
-        ? this.safe('gong', () => this.gong!.listCalls(), [] as GongCall[])
-        : Promise.resolve([] as GongCall[]),
+        ? this.tracked('gong', () => this.gong!.listCalls(), [] as GongCall[])
+        : Promise.resolve({ ok: false, value: [] as GongCall[], count: 0 }),
     ]);
 
+    // Record connection status for the UI.
+    const status = (ok: boolean, count: number): ConnectionStatus =>
+      !ok ? 'not_connected' : count > 0 ? 'connected' : 'cold_start';
+    this.lastConnections = [
+      { name: 'Merge CRM', status: accounts.length > 0 ? 'connected' : 'cold_start', detail: `${accounts.length} accounts` },
+      { name: 'Merge Ticketing', status: status(tickets.ok, tickets.count), detail: tickets.ok ? `${tickets.count} tickets` : 'help desk not connected' },
+      { name: 'Gong', status: this.gong ? status(calls.ok, calls.count) : 'not_connected', detail: this.gong ? `${calls.count} calls` : 'not connected' },
+    ];
+
     // Index side data by account for O(n) assembly.
-    const contactsByAccount = groupBy(contacts, (c) => c.account);
-    const oppsByAccount = groupBy(opportunities, (o) => o.account);
-    const ticketsByAccount = groupBy(tickets, (t) => t.account);
+    const contactsByAccount = groupBy(contacts.value, (c) => c.account);
+    const oppsByAccount = groupBy(opportunities.value, (o) => o.account);
+    const ticketsByAccount = groupBy(tickets.value, (t) => t.account);
+    const callsValue = calls.value;
 
     return accounts.map((account) => {
       const bundle: AccountBundle = {
@@ -63,7 +82,7 @@ export class UnifiedApiDataSource implements DataSource {
         contacts: contactsByAccount.get(account.id) ?? [],
         opportunities: oppsByAccount.get(account.id) ?? [],
         tickets: ticketsByAccount.get(account.id) ?? [],
-        calls: calls.filter((call) => callBelongsToAccount(call, account)),
+        calls: callsValue.filter((call) => callBelongsToAccount(call, account)),
       };
       // One bad account must not sink the whole book.
       try {
@@ -83,14 +102,19 @@ export class UnifiedApiDataSource implements DataSource {
     return all.find((a) => a.id === id) ?? null;
   }
 
-  /** Run a best-effort fetch; on SourceUnavailableError (or any error) log and return the fallback. */
-  private async safe<T>(vendor: 'merge' | 'gong', fn: () => Promise<T>, fallback: T): Promise<T> {
+  connections(): SourceConnection[] {
+    return this.lastConnections;
+  }
+
+  /** Best-effort fetch tracking success + row count; on any error, log and degrade to empty. */
+  private async tracked<T>(vendor: 'merge' | 'gong', fn: () => Promise<T[]>, fallback: T[]): Promise<SubResult<T>> {
     try {
-      return await fn();
+      const value = await fn();
+      return { ok: true, value, count: value.length };
     } catch (err) {
       const reason = err instanceof SourceUnavailableError ? err.reason : String(err);
       this.logger.warn(`${vendor} sub-fetch degraded to empty`, { reason });
-      return fallback;
+      return { ok: false, value: fallback, count: 0 };
     }
   }
 }

@@ -56,10 +56,16 @@ export type MergeTicketPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT' | null;
 
 export interface MergeTicket {
   id: string;
+  /** Ticket subject/title (Merge Ticketing `name`). */
+  name: string | null;
   status: MergeTicketStatus;
   priority: MergeTicketPriority;
   /** Merge account id, when the ticketing system associates one. */
   account: string | null;
+  created_at: string | null;
+  modified_at: string | null;
+  /** SLA due date, when the help desk provides one — drives derived SLA posture. */
+  due_date: string | null;
 }
 
 // ---- Gong conversation intelligence ---------------------------------------

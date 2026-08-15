@@ -21,6 +21,10 @@ export class MockDataSource implements DataSource {
     return REFERENCE_NOW;
   }
 
+  connections() {
+    return [{ name: 'Sample data', status: 'connected' as const, detail: 'Deterministic demo book — no integrations connected' }];
+  }
+
   async listAccounts(): Promise<Account[]> {
     // Return copies so callers can't mutate the fixture between reads.
     return this.accounts.map((a) => structuredClone(a));

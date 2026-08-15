@@ -12,6 +12,7 @@ import {
   getStringField,
   getUsageSeriesField,
 } from './customFields';
+import { mapTicketsForAccount } from './ticketMappers';
 import type {
   GongCall,
   MergeAccount,
@@ -159,15 +160,15 @@ export function assembleAccount(bundle: AccountBundle, now: Date): Account {
 
   const usageHistory: UsageSnapshot[] = getUsageSeriesField(cf, [...KEYS.usageSeries]);
 
-  // Ticket counts: prefer live ticket rows; fall back to custom-field counters if
-  // the customer hasn't connected Merge Ticketing but tracks counts in Salesforce.
-  const openFromRows = tickets.filter((t) => t.status !== 'CLOSED');
-  const criticalFromRows = openFromRows.filter((t) => t.priority === 'URGENT');
+  // Map Merge Ticketing rows → domain tickets, deriving SLA posture; fall back to
+  // custom-field counters if the customer hasn't connected Merge Ticketing but
+  // tracks counts in Salesforce.
+  const mappedTickets = mapTicketsForAccount(tickets, now);
   const openTickets = tickets.length > 0
-    ? openFromRows.length
+    ? mappedTickets.openTickets
     : getNumberField(cf, [...KEYS.openTickets], 0);
   const criticalTickets = tickets.length > 0
-    ? criticalFromRows.length
+    ? mappedTickets.criticalTickets
     : getNumberField(cf, [...KEYS.criticalOpenTickets], 0);
 
   const interactions: Interaction[] = calls
@@ -204,9 +205,8 @@ export function assembleAccount(bundle: AccountBundle, now: Date): Account {
     ownerCsm: getStringField(cf, [...KEYS.ownerCsm], ''),
     priorArr: getNumberField(cf, [...KEYS.priorArr], arr),
     lifecycleState: lifecycleRaw ? mapLifecycle(lifecycleRaw) : 'active',
-    // Phase 4: tickets come from the help-desk client, opportunities from CRM; both
-    // are wired through the bundle in a follow-up. Empty-safe so shapes still match.
-    tickets: [],
+    // Phase 5: help-desk tickets mapped with derived SLA posture.
+    tickets: mappedTickets.tickets,
     opportunities: (opportunities ?? [])
       .filter((o) => typeof o.amount === 'number')
       .map((o) => ({

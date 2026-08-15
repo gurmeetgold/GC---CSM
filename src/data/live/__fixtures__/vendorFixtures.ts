@@ -112,10 +112,14 @@ export const FIXTURE_OPPORTUNITIES: MergeOpportunity[] = [
   },
 ];
 
+// Anchored so SLA derivation is deterministic in tests (now = 2026-08-13).
 export const FIXTURE_TICKETS: MergeTicket[] = [
-  { id: 't1', status: 'OPEN', priority: 'URGENT', account: 'acct-clean' },
-  { id: 't2', status: 'OPEN', priority: 'NORMAL', account: 'acct-clean' },
-  { id: 't3', status: 'CLOSED', priority: 'HIGH', account: 'acct-clean' },
+  // Open, URGENT, past-due → breached; P1.
+  { id: 't1', name: 'Login broken for admins', status: 'OPEN', priority: 'URGENT', account: 'acct-clean', created_at: '2026-08-07T00:00:00Z', modified_at: '2026-08-10T00:00:00Z', due_date: '2026-08-10T00:00:00Z' },
+  // Open, NORMAL, due far in the future → ok; P3.
+  { id: 't2', name: 'Question about exports', status: 'OPEN', priority: 'NORMAL', account: 'acct-clean', created_at: '2026-08-11T00:00:00Z', modified_at: '2026-08-11T00:00:00Z', due_date: '2026-09-01T00:00:00Z' },
+  // Closed → resolved, SLA ok; P2.
+  { id: 't3', name: 'Permissions request', status: 'CLOSED', priority: 'HIGH', account: 'acct-clean', created_at: '2026-07-01T00:00:00Z', modified_at: '2026-07-05T00:00:00Z', due_date: null },
 ];
 
 export const FIXTURE_CALLS: GongCall[] = [
