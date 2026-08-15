@@ -1,4 +1,5 @@
 import type { AnswerEngine, AnswerResult, EvaluatedAccount } from '../AnswerEngine';
+import { authHeaders } from '../../session/clientSession';
 
 /**
  * Browser-side AnswerEngine that delegates to the backend's /api/ask endpoint, which
@@ -16,7 +17,7 @@ export class HttpAnswerEngine implements AnswerEngine {
     void _context;
     const res = await fetch(`${this.baseUrl.replace(/\/$/, '')}/api/ask`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ question }),
     });
     if (!res.ok) {

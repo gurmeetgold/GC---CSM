@@ -46,6 +46,6 @@ describe('HttpBookProvider', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
     await new HttpBookProvider('http://localhost:8787/').loadBook();
-    expect(fetchMock).toHaveBeenCalledWith('http://localhost:8787/api/accounts');
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:8787/api/accounts', { headers: {} });
   });
 });

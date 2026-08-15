@@ -19,6 +19,10 @@ request/evaluation and are not written to any datastore in this phase.
 | Computed signals / risk levels | Not in this phase | in-memory only | A future cache would store computed signals, never raw transcripts |
 | LLM prompts / completions | **No** | — | Anthropic zero-data-retention tier; we don't log them either |
 | Secrets (API keys, client secrets) | **Yes** | env / secret store | Never in code, never logged |
+| User passwords (Phase 7) | **Yes, as a hash** | `UserStore`, in-memory | scrypt (`node:crypto`), random salt per user; the `User` domain type has no password field at all — a hash is never returned by any read path |
+| Session tokens (Phase 7) | **Yes** | `SessionStore`, in-memory | Opaque random bearer tokens, 12h TTL, server-revocable on logout — not JWTs, so nothing to cryptographically "expire early" |
+| Admin-edited signal thresholds (Phase 7) | **Yes** | `ThresholdStore`, in-memory | A partial `ThresholdOverride` per org; not a secret, stored plain |
+| Audit log (integration connect/disconnect, role changes, threshold edits) (Phase 7) | **Yes** | `AuditLogStore`, in-memory | Actor email + action + target + timestamp; no payload content |
 
 ## Secrets
 
@@ -35,6 +39,23 @@ selected live mode is missing its secrets. Config is **server-side only** — th
 browser bundle never imports it, and the two live modules that carry secrets
 (`src/data/live/httpClients.ts`, `src/answer/claude/claudeClient.ts`) are never
 imported by browser code (verified by the build: the SPA bundle excludes them).
+
+### Passwords and session tokens (Phase 7)
+
+- Passwords are hashed with **scrypt** (`node:crypto`, no new dependency) —
+  `src/auth/passwords.ts`. A random 16-byte salt per user; the stored format is
+  self-describing (`scrypt.<saltB64>.<hashB64>`) so the KDF can be rotated later.
+  `verifyPassword` uses a constant-time comparison (`timingSafeEqual`).
+- The `User` domain type (`src/domain/user.ts`) **has no password field** — a hash
+  can never leak through a `User` read path even by accident; `UserStore` keeps
+  password hashes in an internal row shape a caller never sees.
+- Session tokens are 32 random bytes (`crypto.randomBytes`), not JWTs — a session is
+  revoked by deleting it server-side (`SessionStore.destroy`), so logout is
+  instantaneous and doesn't depend on client cooperation or a token blocklist.
+- `credentialStorage.test.ts` proves (a) no plaintext password is ever reachable
+  through `UserStore`'s read methods, (b) login/invite/accept-invite never log the
+  plaintext password to console, and (c) `TokenStore` ciphertext never contains the
+  plaintext token.
 
 ## Encryption at rest
 
@@ -102,6 +123,26 @@ is persisted; tickets are fetched, mapped, counted, and discarded per request.
 
 **Slack: deferred.** No Slack data is fetched, stored, or transmitted in this phase.
 See `SETUP_SLACK.md`.
+
+## Phase 7: who can see what (roles, enforced server-side)
+
+Role gating is not a UI convenience — every gated route rejects an unauthorized
+request at the server, independent of what the browser shows (`roleGating.test.ts`
+hits the real Express app to prove it):
+
+| Role | Book scope | Executive View | Admin Console |
+|------|-----------|-----------------|-----------------|
+| `csm` | Own accounts only (`Account.ownerCsm === name`) | ✗ (403) | ✗ (403) |
+| `manager` | Assigned CSMs' accounts only (`managedCsmNames`) | ✗ (403) | ✗ (403) |
+| `exec` | Whole org, unscoped | ✓ | ✗ (403) |
+| `admin` | Whole org, unscoped | ✓ | ✓ |
+
+`GET /api/leadership` and every `/api/admin/*` route require a valid session AND the
+right role (401 with no session, 403 with the wrong role). `GET /api/accounts` stays
+callable without a session (backward-compatible with the pre-Phase-7 demo) but scopes
+its response to the caller's role whenever a session IS presented. See DECISIONS.md
+#34–#35 for the full rationale, including why the base account endpoints were kept
+open rather than hard-requiring auth.
 
 ## LLM data flow (soft signals + reasoning)
 

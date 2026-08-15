@@ -55,8 +55,10 @@ The thin backend that serves live data to the browser is implemented and tested:
 ## What is still explicitly out (future phases)
 - Persistence of computed signals (a cache) — still in-memory; a Postgres `TokenStore`
   and signal cache drop in behind existing interfaces.
-- The admin panel for per-customer / per-segment thresholds (`resolveThresholds`
-  already supports overrides; see PHASE2_SIGNAL_PROPOSALS.md #3/#4).
+- ~~The admin panel for per-customer / per-segment thresholds~~ — **shipped in Phase 7**
+  (`ThresholdsPage`, `ThresholdStore`, wired into `BookService`). Per-**segment**
+  overrides (as opposed to per-**org**) are still out — `ThresholdStore` is keyed by
+  `orgId` only today.
 - Any signal-logic changes real data suggests — collected in
   `PHASE2_SIGNAL_PROPOSALS.md`, proposed not applied.
 
@@ -130,3 +132,69 @@ today), and relax the "qualitative only" rule on the detail tiles.
 
 **Parity still holds:** the contract test asserts mock and live emit identical shapes
 including all Phase 4 fields (`tickets`, `opportunities`, `trendSeries`).
+
+---
+
+# Phase 7 — admin console: integrations, roles, thresholds, security
+
+## Shipped this phase
+- Auth: `User`/`Role` domain types, scrypt password hashing, `UserStore`,
+  `SessionStore`, `InviteStore`, `AuthService` — first-admin bootstrap
+  (`POST /api/auth/bootstrap-admin`, refuses once the org has any user), login,
+  logout, invite + accept-invite.
+- Server-side role gating (not just hidden nav links): `GET /api/leadership`
+  (exec/admin only) and every `/api/admin/*` route (admin only) reject the wrong
+  role or a missing session at the HTTP layer — proven with real HTTP calls in
+  `roleGating.test.ts`.
+- `/admin` console (client-gated + every underlying API call server-gated): five
+  pages — Integrations, Users & Roles, Signal Thresholds, Data & Security, Organization.
+- Threshold-config refactor: **zero engine changes**. `ThresholdStore` persists a
+  per-org `ThresholdOverride`; `BookService` resolves it into the existing
+  `resolveThresholds()`/`buildBook({ thresholds })` seam (Phase 1, decision #6).
+- `IntegrationsStore`: mock mode simulates all five integration cards connecting;
+  live mode drives CRM/Help Desk through the real Phase-5 `TokenStore`, and honestly
+  reports Slack/Google/Microsoft as not having a real flow yet.
+- Manager book-scope filtering (`server/bookScope.ts`), CSM-to-account assignment
+  kept CRM-owner-driven and read-only (see DECISIONS.md #34).
+- Docs: this section, `DECISIONS.md` #34–#37, `DATA_HANDLING.md`'s new Phase 7
+  sections, `.env.example` unchanged (no new required secrets this phase).
+
+## Known stub: invite emails aren't actually sent
+`LoggingMailer` logs `[stub] invite email not sent (no email service configured)`
+instead of delivering anything. The invite record itself is real — it drives the
+pending-invites list and `accept-invite` genuinely creates the account with the
+invited role — only the delivery channel is missing. Wiring a real one (SES, Postgres
+outbox, etc.) is a `Mailer` implementation swap, no call-site changes needed.
+
+## How to create the first admin and test each role (manual)
+
+```bash
+DATA_SOURCE=mock ANSWER_ENGINE=mock npm run server   # backend on :8787
+VITE_BACKEND_URL=http://localhost:8787 npm run dev   # SPA on :5173
+```
+
+1. Open the SPA. Since no admin exists yet, you land on **"Create the first admin
+   account"** — fill it in (any email, a password ≥ 8 chars) and submit. You're now
+   signed in as `admin`, with the full app AND the Admin Console visible.
+2. Go to **Admin Console → Users & Roles**, invite a teammate (any email, pick a
+   role). Since no email service is wired, the invite is **logged to the server
+   console** with an `inviteId` — copy it from there.
+3. Sign out, then hit `POST {backend}/api/auth/accept-invite` with that `inviteId`
+   (there's no accept-invite UI screen yet — see below) to create the invited
+   account, or just create additional admins by clearing server state (restart the
+   process — everything is in-memory) and bootstrapping again with a different role
+   by inviting instead of re-bootstrapping.
+4. Sign in as each role and confirm: `csm`/`manager` do NOT see "Executive View" or
+   "Admin Console" in the nav (and hitting `/api/leadership` or `/api/admin/*`
+   directly with their token returns 403 — try it with `curl`); `exec` sees
+   Executive View but not Admin Console; `admin` sees everything.
+5. In the Admin Console: connect/disconnect any of the five integration cards (all
+   simulate instantly in mock mode), edit a signal threshold and reload the main app
+   to see it take effect, check the Data & Security tab's audit log for the actions
+   you just took.
+
+**Not yet built:** an in-app "accept invite" screen (the endpoint exists,
+`POST /api/auth/accept-invite`, but there's no form for it — see the stub note
+above; this is next on the list once real invite emails are wired). Everything is
+in-memory, so restarting the server process resets all users, sessions, thresholds,
+and the audit log — there is no persistence across restarts in this phase.

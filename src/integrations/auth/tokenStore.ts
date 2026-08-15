@@ -9,7 +9,7 @@ import { decryptSecret, encryptSecret } from './crypto';
  * Postgres-backed one are interchangeable — same drop-in seam as DataSource.
  */
 
-export type Provider = 'salesforce' | 'gong';
+export type Provider = 'salesforce' | 'gong' | 'ticketing';
 
 export interface StoredToken {
   provider: Provider;

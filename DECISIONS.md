@@ -356,3 +356,92 @@ Added `connections(): SourceConnection[]` to the `DataSource` interface
 `BookProvider`, `useBook`, and a "Data Sources" panel in the app shell — so the UI can
 **honestly** show which integrations are live vs. cold-start vs. not connected, instead
 of implying everything is wired. Mock reports a single "Sample data: connected" source.
+
+---
+
+# Phase 7 Decisions — admin console: integrations, roles, thresholds, security
+
+## 34. Auth/roles/admin-console architecture, in one place
+
+**Role semantics.** Four roles, no permissions matrix yet: `csm` (own book only,
+scoped by `Account.ownerCsm === user.name` — CRM is the source of truth for
+ownership, so a CSM's identity for scoping purposes IS their CRM owner name, not a
+separate mapping), `manager` (their assigned CSMs' books only — `User.managedCsmNames`,
+a list of `ownerCsm` name strings the admin assigns on the Users page; a manager with
+no assignments sees nothing, never "the whole org by accident"), `exec` (whole org,
+unscoped, plus Executive View), `admin` (everything `exec` sees, plus the Admin
+Console). Admin implies exec-level visibility so an admin is never blocked from a page
+they administer.
+
+**CSM-to-account assignment stays CRM-owner-driven, read-only.** The Users & Roles
+page displays `ownerCsm` from the book; it does not let an admin reassign an account's
+owner. Reassigning would create a second, divergent source of truth from the CRM's own
+owner field and the existing "Book Balance by CSM" leadership widget (`workloadByCsm`,
+Phase 3) — both already read `ownerCsm` directly. A manager's `managedCsmNames`, by
+contrast, IS admin-managed: "which CSM names does this manager oversee" has no CRM
+equivalent to conflict with.
+
+**Credential storage: extended the existing `TokenStore`/AES-256-GCM pattern, not a
+database.** `integrations/auth/tokenStore.ts`'s `Provider` type gained `'ticketing'`
+(Ticketing is a separately-connected Merge category, same as CRM/Salesforce/Gong).
+User accounts and sessions got their own equally-small interfaces — `UserStore`
+(scrypt-hashed passwords, `node:crypto`, no new dependency), `SessionStore` (opaque
+random bearer tokens, server-revocable), `InviteStore`, `ThresholdStore`,
+`AuditLogStore`, `OrgSettingsStore`, and an `IntegrationsStore` (mock simulates all
+five cards; live drives `crm`/`helpdesk` through the real `TokenStore`, and honestly
+reports `slack`/`google`/`microsoft` as having no live flow — see #36). Every one of
+these is in-memory (`InMemory*`) for this phase, same as `MockDataSource` always was —
+no database was stood up. A Postgres-backed implementation drops in behind each
+identical interface later, the same seam `DataSource` has always used. This keeps the
+zero-infra, zero-credential demo story intact: `npm run dev` still needs nothing.
+
+**Single-org per deployment, for now.** `User.orgId` and every store's `orgId`
+parameter exist because the domain model should be multi-tenant-shaped, but the rest
+of this codebase (one `.env`, one `ServerConfig`, one `DataSource` instance) is
+single-tenant per deployment. `server/orgId.ts`'s `DEFAULT_ORG_ID` is the one place
+that assumption lives; every store already takes `orgId` as a real parameter, so
+resolving it per-request (subdomain, path, etc.) later doesn't touch call sites.
+
+**Threshold-config: zero engine changes — the seam already existed.** Phase 1
+decision #6 already made `resolveThresholds(override)` and `buildBook({ thresholds })`
+pure, injected, engine-untouched. The ENTIRE Phase 7 threshold refactor was adding
+`ThresholdStore` (persist a per-org partial `ThresholdOverride`) and wiring
+`BookService.getBook()` to resolve it before calling `buildBook` — see
+`service.thresholdFlow.test.ts`, which proves an admin-set override flips a
+previously-silent signal to firing without a single line of `engine/` changing.
+
+## 35. Auth is hard-gated server-side for the two surfaces the brief singles out; base pages stay backward-compatible
+
+`GET /api/leadership` (Executive View's data) and every `/api/admin/*` route are
+gated with `requireRole(...)` **unconditionally** — a request with no session, an
+expired session, or the wrong role gets 401/403 regardless of what the SPA hides
+(`roleGating.test.ts` hits the real Express app over HTTP to prove this, not just
+"the nav link is hidden"). `GET /api/accounts` / `POST /api/ask`, by contrast, stay
+**callable without a session** — every Phase 1–6 test exercised them unauthenticated,
+and breaking that would both violate "prior-phase tests stay green" and kill the
+zero-login instant demo every phase before this one relied on. When a valid session
+IS presented, `/api/accounts` applies role-based book scoping
+(`server/bookScope.ts`) so an authenticated `csm`/`manager` sees only their book.
+Client-side, `AuthGate` still requires login for the WHOLE app whenever a backend is
+configured (`VITE_BACKEND_URL` set) — the zero-backend `LocalBookProvider` demo
+(no `VITE_BACKEND_URL`) is unchanged from before Phase 7: no login, no roles, no
+admin console, because there is no server to enforce any of it against.
+
+## 36. Slack/Google/Microsoft integration cards are honest about not being built
+
+Only CRM and Help Desk (both Merge) have a real live connect flow (`MergeLinkService`,
+Phase 5). Slack, Google Workspace, and Microsoft 365 have no OAuth implementation
+anywhere in this codebase — Slack was explicitly deferred in Phase 5
+(`SETUP_SLACK.md`); Google/Microsoft were never started. Their Integrations-page cards
+say so (`liveFlowAvailable: false`, "No live connect flow is built for this
+integration yet"), and `LiveIntegrationsStore.connect()` throws rather than faking a
+connection in live mode. In **mock** mode, all five cards DO simulate a connected
+state — the phase brief's requirement that the whole console demo with zero
+credentials — but that's a demo affordance, not a claim that the flow is real.
+
+## 37. Invites are logged, not emailed — no email service exists yet
+
+`LoggingMailer` logs `[stub] invite email not sent` instead of delivering anything;
+`NEXT.md` records this as a followup. The invite record itself is real (persisted,
+drives the pending-invites list, and `POST /api/auth/accept-invite` genuinely creates
+the account with the invited role) — only the delivery channel is stubbed.

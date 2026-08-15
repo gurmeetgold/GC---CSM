@@ -6,28 +6,35 @@ import {
   IconAlert, IconExec, IconSettings, IconSearch, IconBell, IconCalendar, IconChevron,
 } from './icons';
 
-export type Route = 'home' | 'accounts' | 'renewals' | 'opportunities' | 'support' | 'executive' | 'ask';
+export type Route = 'home' | 'accounts' | 'renewals' | 'opportunities' | 'support' | 'executive' | 'ask' | 'admin';
 
 interface NavItem {
   label: string;
   icon: (p: { size?: number }) => ReactNode;
   route: Route | null; // null = shown but disabled (feature not in this build)
   badge?: number;
+  /** Hide this item entirely rather than just disabling it (role-gated, not "unbuilt"). */
+  hidden?: boolean;
 }
 
 // The full SignalOS nav is reproduced; items we don't build this phase are shown
 // but non-clickable (disabled), so the shell matches the vision without faking depth.
-const NAV: NavItem[] = [
-  { label: 'Home', icon: IconHome, route: 'home' },
-  { label: 'Accounts', icon: IconAccounts, route: 'accounts' },
-  { label: 'Renewals', icon: IconRenewals, route: 'renewals' },
-  { label: 'Opportunities', icon: IconOpportunities, route: 'opportunities' },
-  { label: 'Technical Health', icon: IconTech, route: 'support' },
-  { label: 'Playbooks', icon: IconPlaybook, route: null },
-  { label: 'Alerts', icon: IconAlert, route: null, badge: 12 },
-  { label: 'Executive View', icon: IconExec, route: 'executive' },
-  { label: 'Settings', icon: IconSettings, route: null },
-];
+// Executive View and Admin Console are role-gated (Phase 7) — hidden, not just
+// disabled, for roles that can't see them; the route render is ALSO blocked
+// server- and client-side (see App.tsx / http.ts), this is UI convenience only.
+function navItems(opts: { showExecutive: boolean; showAdmin: boolean }): NavItem[] {
+  return [
+    { label: 'Home', icon: IconHome, route: 'home' },
+    { label: 'Accounts', icon: IconAccounts, route: 'accounts' },
+    { label: 'Renewals', icon: IconRenewals, route: 'renewals' },
+    { label: 'Opportunities', icon: IconOpportunities, route: 'opportunities' },
+    { label: 'Technical Health', icon: IconTech, route: 'support' },
+    { label: 'Playbooks', icon: IconPlaybook, route: null },
+    { label: 'Alerts', icon: IconAlert, route: null, badge: 12 },
+    { label: 'Executive View', icon: IconExec, route: 'executive', hidden: !opts.showExecutive },
+    { label: 'Admin Console', icon: IconSettings, route: 'admin', hidden: !opts.showAdmin },
+  ];
+}
 
 export interface Snapshot {
   total: number;
@@ -36,12 +43,22 @@ export interface Snapshot {
   critical: number;
 }
 
+export interface CurrentUserInfo {
+  name: string;
+  roleLabel: string;
+  initials: string;
+}
+
 export function AppShell({
   route,
   onNavigate,
   onAsk,
   snapshot,
   connections = [],
+  showExecutive = true,
+  showAdmin = false,
+  currentUser,
+  onLogout,
   children,
 }: {
   route: Route;
@@ -49,9 +66,16 @@ export function AppShell({
   onAsk: (q: string) => void;
   snapshot: Snapshot;
   connections?: SourceConnection[];
+  /** Role gate for the Executive View nav item (Phase 7). Defaults to visible (pre-auth demo). */
+  showExecutive?: boolean;
+  /** Role gate for the Admin Console nav item (Phase 7). Defaults to hidden. */
+  showAdmin?: boolean;
+  currentUser?: CurrentUserInfo;
+  onLogout?: () => void;
   children: ReactNode;
 }) {
   const [q, setQ] = useState('');
+  const NAV = navItems({ showExecutive, showAdmin });
   return (
     <div className="min-h-screen bg-surface-sunken text-ink">
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-ink focus:px-3 focus:py-2 focus:text-sm focus:text-white">
@@ -67,7 +91,7 @@ export function AppShell({
           </div>
 
           <nav className="flex-1 px-3 py-2" aria-label="Primary">
-            {NAV.map((item) => {
+            {NAV.filter((item) => !item.hidden).map((item) => {
               const active = item.route === route;
               const disabled = item.route === null;
               return (
@@ -151,16 +175,23 @@ export function AppShell({
                 <span className="nums absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-risk-red text-[10px] font-semibold text-white">7</span>
               </button>
               <div className="flex items-center gap-2 pl-1">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand">SC</span>
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand">
+                  {currentUser?.initials ?? 'SC'}
+                </span>
                 <div className="hidden leading-tight sm:block">
-                  <div className="text-sm font-medium text-ink">Sarah Chen</div>
-                  <div className="text-xs text-ink-faint">Senior CSM</div>
+                  <div className="text-sm font-medium text-ink">{currentUser?.name ?? 'Sarah Chen'}</div>
+                  <div className="text-xs text-ink-faint">{currentUser?.roleLabel ?? 'Senior CSM'}</div>
                 </div>
+                {onLogout && (
+                  <button type="button" onClick={onLogout} className="ml-1 rounded-lg px-2 py-1 text-xs font-medium text-ink-faint hover:bg-surface-sunken hover:text-ink">
+                    Sign out
+                  </button>
+                )}
               </div>
             </div>
             {/* Mobile nav */}
             <nav className="flex gap-1 overflow-x-auto border-t border-line px-3 py-2 lg:hidden" aria-label="Primary mobile">
-              {NAV.filter((n) => n.route).map((item) => (
+              {NAV.filter((n) => n.route && !n.hidden).map((item) => (
                 <button key={item.label} type="button" onClick={() => item.route && onNavigate(item.route)}
                   className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium ${item.route === route ? 'bg-brand-soft text-brand' : 'text-ink-soft'}`}>
                   {item.label}

@@ -1,8 +1,11 @@
 import type { AnswerEngine, AnswerResult, EvaluatedAccount } from '../answer';
 import type { SourceConnection } from '../data';
+import { resolveThresholds } from '../domain';
 import { buildBook, writeRedReasoning } from '../health/pipeline';
 import { buildAnswerEngine, buildDataSource, buildSoftSignalEnrichment } from './factory';
 import type { ServerConfig } from './config';
+import type { ThresholdStore } from '../admin/thresholdStore';
+import { DEFAULT_ORG_ID } from './orgId';
 
 /**
  * The backend's application service. Assembles the live (or mock) implementations
@@ -28,12 +31,16 @@ export class BookService {
   private readonly source;
   private readonly answerEngine: AnswerEngine;
   private readonly enrichment;
-  private cache: { at: number; payload: BookPayload } | null = null;
+  private cache: { at: number; thresholdsSignature: string; payload: BookPayload } | null = null;
 
   constructor(
     cfg: ServerConfig,
     private readonly ttlMs = 60_000,
     private readonly clock: () => number = Date.now,
+    /** When set, admin-edited thresholds (Phase 7) are resolved per org and fed into
+     *  the (untouched) engine via `buildBook({ thresholds })` — see DECISIONS.md #34. */
+    private readonly thresholdStore?: ThresholdStore,
+    private readonly orgId: string = DEFAULT_ORG_ID,
   ) {
     this.source = buildDataSource(cfg);
     this.answerEngine = buildAnswerEngine(cfg);
@@ -41,9 +48,19 @@ export class BookService {
   }
 
   async getBook(): Promise<BookPayload> {
-    if (this.cache && this.clock() - this.cache.at < this.ttlMs) return this.cache.payload;
+    const override = this.thresholdStore ? await this.thresholdStore.get(this.orgId) : undefined;
+    const thresholdsSignature = JSON.stringify(override ?? {});
 
-    const book = await buildBook(this.source, { extractor: this.enrichment?.extractor ?? null });
+    if (
+      this.cache &&
+      this.clock() - this.cache.at < this.ttlMs &&
+      this.cache.thresholdsSignature === thresholdsSignature
+    ) {
+      return this.cache.payload;
+    }
+
+    const thresholds = resolveThresholds(override);
+    const book = await buildBook(this.source, { extractor: this.enrichment?.extractor ?? null, thresholds });
 
     const reasoning: Record<string, string> = {};
     if (this.enrichment) {
@@ -59,7 +76,7 @@ export class BookService {
       reasoning,
       connections: this.source.connections(),
     };
-    this.cache = { at: this.clock(), payload };
+    this.cache = { at: this.clock(), thresholdsSignature, payload };
     return payload;
   }
 

@@ -1,4 +1,5 @@
 import { createDataSource, resolveDataSourceKind, type SourceConnection } from '../data';
+import { authHeaders } from '../session/clientSession';
 import type { EvaluatedAccount } from '../answer';
 import { MockSoftSignalExtractor } from '../answer/mock/MockSoftSignalExtractor';
 import { MockReasoningWriter } from '../answer/mock/MockReasoningWriter';
@@ -54,7 +55,7 @@ export class HttpBookProvider implements BookProvider {
   constructor(private readonly baseUrl: string) {}
 
   async loadBook(): Promise<LoadedBook> {
-    const res = await fetch(`${this.baseUrl.replace(/\/$/, '')}/api/accounts`);
+    const res = await fetch(`${this.baseUrl.replace(/\/$/, '')}/api/accounts`, { headers: authHeaders() });
     if (!res.ok) throw new Error(`Backend returned HTTP ${res.status}`);
     const data = (await res.json()) as {
       accounts: EvaluatedAccount[];

@@ -46,10 +46,16 @@ describe('App (smoke)', () => {
     await waitFor(() => expect(screen.getByText(/Interpreted as:/)).toBeInTheDocument());
   });
 
-  it('disables the unbuilt nav items (Playbooks, Settings)', async () => {
+  it('disables the unbuilt nav items (Playbooks, Alerts)', async () => {
     render(<App />);
     await waitFor(() => screen.getByText('My Portfolio'));
     expect(nav(/Playbooks/)).toBeDisabled();
-    expect(nav(/Settings/)).toBeDisabled();
+    expect(nav(/Alerts/)).toBeDisabled();
+  });
+
+  it('hides the Admin Console nav item in the zero-backend local demo (no auth, no admin)', async () => {
+    render(<App />);
+    await waitFor(() => screen.getByText('My Portfolio'));
+    expect(screen.queryByRole('button', { name: /Admin Console/ })).not.toBeInTheDocument();
   });
 });

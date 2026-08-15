@@ -25,6 +25,7 @@ type FetchImpl = (url: string, init: RequestInit) => Promise<Response>;
 const PROVIDER_TO_MERGE_INTEGRATION: Record<Provider, { category: string; integration: string }> = {
   salesforce: { category: 'crm', integration: 'Salesforce' },
   gong: { category: 'crm', integration: 'Gong' }, // Gong surfaced via Merge's conversation/CRM link
+  ticketing: { category: 'ticketing', integration: 'Zendesk' },
 };
 
 export class MergeLinkService {

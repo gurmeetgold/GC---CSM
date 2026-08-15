@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useBook } from './useBook';
-import { AppShell, type Route } from './ui/AppShell';
+import { AppShell, type Route, type CurrentUserInfo } from './ui/AppShell';
 import { Home } from './screens/Home';
 import { AccountsScreen } from './screens/AccountsScreen';
 import { AccountDetail } from './screens/AccountDetail';
@@ -9,15 +9,46 @@ import { OpportunitiesScreen } from './screens/OpportunitiesScreen';
 import { SupportScreen } from './screens/SupportScreen';
 import { Executive } from './screens/Executive';
 import { AskAnything } from './screens/AskAnything';
+import { AdminConsole } from './admin/AdminConsole';
 import { createAnswerEngine } from '../answer';
 import { HttpAnswerEngine } from '../answer/http/HttpAnswerEngine';
 import { backendUrl } from './bookProvider';
+import { AuthProvider, useAuth, canSeeExecutiveView, canSeeAdminConsole } from './auth/AuthContext';
+import { LoginScreen } from './auth/LoginScreen';
 
 export default function App() {
+  return (
+    <AuthProvider baseUrl={backendUrl()}>
+      <AuthGate />
+    </AuthProvider>
+  );
+}
+
+/**
+ * Blocks the whole app behind login ONLY when a backend is configured — the
+ * zero-credential local demo (no `VITE_BACKEND_URL`) is unchanged from before
+ * Phase 7: no login, no roles, no admin console (see DECISIONS.md #34).
+ */
+function AuthGate() {
+  const { status, authEnabled } = useAuth();
+  if (!authEnabled) return <AppContent />;
+  if (status === 'loading') return <FullScreenLoading />;
+  if (status === 'needs-bootstrap' || status === 'signed-out') return <LoginScreen />;
+  return <AppContent />;
+}
+
+function AppContent() {
   const { loading, error, book, now, reasoning, connections } = useBook();
+  const { user, authEnabled, logout } = useAuth();
   const [route, setRoute] = useState<Route>('home');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [askSeed, setAskSeed] = useState('');
+
+  // Pre-auth demo (no backend): everyone sees Executive View, nobody sees Admin
+  // Console (there's no server to enforce it against). Authenticated deployments
+  // gate both by role — see DECISIONS.md #34.
+  const showExecutive = !authEnabled || canSeeExecutiveView(user?.role);
+  const showAdmin = authEnabled && canSeeAdminConsole(user?.role);
 
   const answerEngine = useMemo(() => {
     const url = backendUrl();
@@ -50,8 +81,22 @@ export default function App() {
 
   const selected = selectedId ? book.find((e) => e.account.id === selectedId) ?? null : null;
 
+  const currentUser: CurrentUserInfo | undefined = user
+    ? { name: user.name, roleLabel: roleLabel(user.role), initials: initials(user.name) }
+    : undefined;
+
   return (
-    <AppShell route={route} onNavigate={navigate} onAsk={ask} snapshot={snapshot} connections={connections}>
+    <AppShell
+      route={route}
+      onNavigate={navigate}
+      onAsk={ask}
+      snapshot={snapshot}
+      connections={connections}
+      showExecutive={showExecutive}
+      showAdmin={showAdmin}
+      currentUser={currentUser}
+      onLogout={authEnabled ? () => void logout() : undefined}
+    >
       {loading && <LoadingState />}
       {error && !loading && <ErrorState message={error} />}
       {!loading && !error && (
@@ -64,11 +109,34 @@ export default function App() {
           {route === 'renewals' && <RenewalsCenter book={book} now={now} onSelect={selectAccount} />}
           {route === 'opportunities' && <OpportunitiesScreen book={book} onSelect={selectAccount} />}
           {route === 'support' && <SupportScreen book={book} now={now} onSelect={selectAccount} />}
-          {route === 'executive' && <Executive book={book} now={now} />}
+          {route === 'executive' && (showExecutive ? <Executive book={book} now={now} /> : <ForbiddenState what="Executive View" />)}
           {route === 'ask' && <AskAnything book={book} onSelect={selectAccount} engine={answerEngine} seed={askSeed} />}
+          {route === 'admin' && (showAdmin ? <AdminConsole /> : <ForbiddenState what="Admin Console" />)}
         </>
       )}
     </AppShell>
+  );
+}
+
+function roleLabel(role: string): string {
+  switch (role) {
+    case 'admin': return 'Admin';
+    case 'exec': return 'Executive';
+    case 'manager': return 'Manager';
+    default: return 'CSM';
+  }
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || 'U';
+}
+
+function FullScreenLoading() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-surface-sunken">
+      <div className="h-8 w-8 animate-pulse rounded-full bg-brand-soft" />
+    </div>
   );
 }
 
@@ -90,6 +158,18 @@ function ErrorState({ message }: { message: string }) {
     <div className="rounded-xl border border-risk-red/40 bg-risk-redBg p-6" role="alert">
       <h2 className="font-semibold text-risk-red">Couldn’t load the book</h2>
       <p className="mt-1 text-sm text-ink-soft">{message}</p>
+    </div>
+  );
+}
+
+/** Client-side belt-and-suspenders: even if route state is somehow forced to a
+ *  gated route, render nothing instead of the screen. The real enforcement is
+ *  server-side (see http.ts's requireRole on /api/leadership and /api/admin/*). */
+function ForbiddenState({ what }: { what: string }) {
+  return (
+    <div className="rounded-xl border border-line bg-surface p-6" role="alert">
+      <h2 className="font-semibold text-ink">You don’t have access to {what}</h2>
+      <p className="mt-1 text-sm text-ink-soft">Ask an admin if you believe this is wrong.</p>
     </div>
   );
 }
