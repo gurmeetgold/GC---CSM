@@ -1,4 +1,6 @@
 # Customer Success Copilot — Phase 1
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fgurmeetgold%2FGC---CSM.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fgurmeetgold%2FGC---CSM?ref=badge_shield)
+
 
 A single view of a CSM's book of business: which accounts are at risk, why, and
 what changed. This phase ships the app skeleton, a realistic mock-data layer, the
@@ -105,3 +107,7 @@ threshold. A table-driven test asserts the expected risk level (and key signals)
 all 25 mock accounts. An adversarial suite proves the engine never throws on empty,
 null, malformed, or absurd input, and a cold-start test proves thin data never reads
 red. React/mock glue gets a light smoke pass only.
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fgurmeetgold%2FGC---CSM.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fgurmeetgold%2FGC---CSM?ref=badge_large)
